@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel AI Coach | Excel Educational Institute</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        excel: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                            navy: '#0b192c',
+                            gold: '#f59e0b',
+                            goldHover: '#d97706'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Marked for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-excel-navy text-white shadow-lg sticky top-0 z-50 border-b border-slate-700/60">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand Logo & Title -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center shadow-md font-black text-excel-navy text-xl">
+                        E
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-extrabold text-lg tracking-tight">EXCEL AI</span>
+                            <span class="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded-full font-semibold border border-amber-400/30">Coach 2.0</span>
+                        </div>
+                        <p class="text-xs text-slate-300 font-medium">Excel Educational Institute • CA | CS | CMA</p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="hidden md:flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/80 text-sm font-medium">
+                    <button onclick="switchTab('doubt')" id="tab-btn-doubt" class="tab-btn active px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition">
+                        <i data-lucide="message-square" class="w-4 h-4"></i>
+                        <span>AI Doubt Coach</span>
+                    </button>
+                    <button onclick="switchTab('evaluator')" id="tab-btn-evaluator" class="tab-btn px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition">
+                        <i data-lucide="file-check-2" class="w-4 h-4"></i>
+                        <span>Answer Evaluator</span>
+                    </button>
+                    <button onclick="switchTab('mcq')" id="tab-btn-mcq" class="tab-btn px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                        <span>MCQ Practice</span>
+                    </button>
+                    <button onclick="switchTab('materials')" id="tab-btn-materials" class="tab-btn px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition">
+                        <i data-lucide="book-open" class="w-4 h-4"></i>
+                        <span>Study Materials</span>
+                    </button>
+                    <button onclick="switchTab('share')" id="tab-btn-share" class="tab-btn px-3.5 py-1.5 rounded-lg flex items-center gap-2 transition">
+                        <i data-lucide="share-2" class="w-4 h-4"></i>
+                        <span>Share & API</span>
+                    </button>
+                </nav>
+
+                <!-- Status Badges -->
+                <div class="flex items-center gap-3">
+                    <div id="status-pill" class="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full text-xs text-emerald-300 font-medium">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span id="status-text">AI Ready (RAG Active)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Navigation Strip -->
+        <div class="md:hidden flex overflow-x-auto bg-slate-900 px-2 py-2 border-t border-slate-800 gap-1 text-xs">
+            <button onclick="switchTab('doubt')" id="mob-tab-doubt" class="px-3 py-1.5 rounded-lg whitespace-nowrap bg-excel-600 text-white font-medium">Doubt Coach</button>
+            <button onclick="switchTab('evaluator')" id="mob-tab-evaluator" class="px-3 py-1.5 rounded-lg whitespace-nowrap text-slate-300">Answer Check</button>
+            <button onclick="switchTab('mcq')" id="mob-tab-mcq" class="px-3 py-1.5 rounded-lg whitespace-nowrap text-slate-300">MCQ Quiz</button>
+            <button onclick="switchTab('materials')" id="mob-tab-materials" class="px-3 py-1.5 rounded-lg whitespace-nowrap text-slate-300">PDFs</button>
+            <button onclick="switchTab('share')" id="mob-tab-share" class="px-3 py-1.5 rounded-lg whitespace-nowrap text-slate-300">Share/API</button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- ================= TAB 1: AI DOUBT COACH ================= -->
+        <section id="section-doubt" class="tab-content block">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <!-- Sidebar: Subject selection & Quick prompts -->
+                <div class="lg:col-span-1 space-y-4">
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Target Subject</label>
+                        <select id="chat-subject-select" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-excel-600 transition">
+                            <option value="All">All Subjects (Universal RAG)</option>
+                            <option value="CA_Inter_Taxation">CA Inter - Taxation</option>
+                            <option value="CA_Inter_Corporate_Law">CA Inter - Corporate Law</option>
+                            <option value="CA_Inter_Costing">CA Inter - Costing</option>
+                            <option value="CA_Inter_Auditing">CA Inter - Auditing</option>
+                            <option value="CS_Executive_Company_Law">CS Executive - Law</option>
+                            <option value="CMA_Direct_Tax">CMA - Direct Tax</option>
+                        </select>
+                        <p class="text-xs text-slate-400 mt-2">Answers are verified against official ICAI/ICSI study modules.</p>
+                    </div>
+
+                    <!-- Quick Sample Questions for Instant Demo -->
+                    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-500"></i>
+                            <span>High-Yield Exam Doubts</span>
+                        </h4>
+                        <div class="space-y-2">
+                            <button onclick="setQueryAndSend('Explain tax slabs and Section 87A rebate under Section 115BAC new default tax regime')" class="w-full text-left text-xs bg-slate-50 hover:bg-excel-50 hover:border-excel-600/30 p-2.5 rounded-xl border border-slate-200/80 transition text-slate-700 font-medium">
+                                📌 Section 115BAC New Tax Slabs & 87A
+                            </button>
+                            <button onclick="setQueryAndSend('What are the statutory conditions and quantum limits for buy-back of shares under Section 68?')" class="w-full text-left text-xs bg-slate-50 hover:bg-excel-50 hover:border-excel-600/30 p-2.5 rounded-xl border border-slate-200/80 transition text-slate-700 font-medium">
+                                📌 Section 68 Buy-back Rules & Limits
+                            </button>
+                            <button onclick="setQueryAndSend('What is the formula for Material Cost Variance, Material Price Variance, and Material Usage Variance?')" class="w-full text-left text-xs bg-slate-50 hover:bg-excel-50 hover:border-excel-600/30 p-2.5 rounded-xl border border-slate-200/80 transition text-slate-700 font-medium">
+                                📌 Costing: Standard Variance Formulas
+                            </button>
+                            <button onclick="setQueryAndSend('Explain auditor responsibilities relating to fraud under SA 240')" class="w-full text-left text-xs bg-slate-50 hover:bg-excel-50 hover:border-excel-600/30 p-2.5 rounded-xl border border-slate-200/80 transition text-slate-700 font-medium">
+                                📌 Auditing: SA 240 Fraud Responsibilities
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Box Main Area -->
+                <div class="lg:col-span-3 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm h-[680px]">
+                    <!-- Chat Header -->
+                    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-excel-50 text-excel-700 flex items-center justify-center font-bold">
+                                <i data-lucide="bot" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-slate-800">Excel AI Commerce Doubt Coach</h3>
+                                <p class="text-xs text-slate-400">Strictly formats answers in ICAI/ICSI/ICMAI exam presentation style</p>
+                            </div>
+                        </div>
+                        <button onclick="clearChat()" class="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 transition">
+                            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                            <span>Clear</span>
+                        </button>
+                    </div>
+
+                    <!-- Chat Message Feed -->
+                    <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-5">
+                        <!-- Welcome message -->
+                        <div class="flex gap-3">
+                            <div class="w-8 h-8 rounded-full bg-excel-700 text-white flex-shrink-0 flex items-center justify-center font-bold text-xs shadow-sm">
+                                AI
+                            </div>
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl rounded-tl-sm p-4 text-sm text-slate-700 max-w-2xl leading-relaxed shadow-sm">
+                                <p class="font-bold text-slate-900 mb-1">Namaste Future Chartered Accountant / CS / CMA! 🎓</p>
+                                <p>I am your **Excel AI Coach**, trained on your coaching study materials, ICAI/ICSI Bare Acts, and past suggested answers.</p>
+                                <p class="mt-2 text-xs text-slate-500">You can type any concept or practical question, click on one of the quick topics on the left, or use the <strong>Voice button</strong> to speak your doubt directly!</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input Area -->
+                    <div class="p-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
+                        <div class="flex items-center gap-2">
+                            <!-- Voice Note Button -->
+                            <button id="voice-btn" onclick="toggleVoiceInput()" title="Speak your doubt (Voice Note)" class="p-3 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-amber-600 hover:border-amber-400 transition flex items-center justify-center shadow-sm">
+                                <i id="voice-icon" data-lucide="mic" class="w-5 h-5"></i>
+                            </button>
+
+                            <!-- Input text -->
+                            <input type="text" id="chat-input" placeholder="Ask any doubt or paste exam question (e.g. Sec 115BAC, Buyback limits)..." class="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-excel-600 shadow-sm" onkeydown="if(event.key === 'Enter') sendChatMessage()">
+
+                            <!-- Send button -->
+                            <button onclick="sendChatMessage()" id="send-chat-btn" class="bg-excel-navy hover:bg-slate-800 text-white px-5 py-3 rounded-xl font-semibold text-sm shadow-md flex items-center gap-2 transition">
+                                <span>Send</span>
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div id="voice-indicator" class="hidden mt-2 text-xs text-amber-600 font-semibold flex items-center gap-2 animate-pulse">
+                            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                            <span>Listening to your voice... Speak now!</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 2: ANSWER EVALUATOR ================= -->
+        <section id="section-evaluator" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <!-- Banner -->
+                <div class="bg-gradient-to-r from-excel-navy to-slate-800 text-white rounded-2xl p-6 shadow-md flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-black flex items-center gap-2">
+                            <span>ICAI / ICSI Answer Paper Evaluator</span>
+                            <span class="bg-amber-400 text-excel-navy text-xs font-bold px-2 py-0.5 rounded-full">Multimodal AI</span>
+                        </h2>
+                        <p class="text-xs text-slate-300 mt-1">Upload a photo of your handwritten answer sheet or paste your drafted answer to receive step-by-step marks and examiner feedback.</p>
+                    </div>
+                    <i data-lucide="award" class="w-12 h-12 text-amber-400 opacity-80 hidden sm:block"></i>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Submission Form -->
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Exam Question / Problem</label>
+                            <textarea id="eval-question" rows="3" placeholder="Enter or paste the question here (e.g. Advise the company whether buy-back through board resolution is valid under Section 68...)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-excel-600"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Option A: Upload Handwritten Answer Photo</label>
+                            <div class="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:bg-slate-50 transition cursor-pointer relative" onclick="document.getElementById('eval-file').click()">
+                                <input type="file" id="eval-file" accept="image/*,.pdf" class="hidden" onchange="previewUpload(event)">
+                                <i data-lucide="camera" class="w-8 h-8 text-slate-400 mx-auto mb-2"></i>
+                                <p id="file-label" class="text-xs font-medium text-slate-600">Click to upload photo of your handwritten paper</p>
+                                <p class="text-[11px] text-slate-400 mt-1">Supports JPG, PNG, PDF</p>
+                                <div id="preview-container" class="hidden mt-3">
+                                    <img id="image-preview" class="max-h-40 mx-auto rounded-lg border border-slate-200 shadow-sm" alt="Preview">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">Option B: Or Type / Paste Your Answer Text</label>
+                            <textarea id="eval-answer-text" rows="4" placeholder="Draft your answer here (Applicable Provisions, Analysis, Conclusion)..." class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-excel-600"></textarea>
+                        </div>
+
+                        <button onclick="submitAnswerForEvaluation()" id="eval-btn" class="w-full bg-excel-600 hover:bg-excel-700 text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition">
+                            <i data-lucide="check-square" class="w-4 h-4"></i>
+                            <span>Evaluate Answer Now</span>
+                        </button>
+                    </div>
+
+                    <!-- Evaluation Report Display -->
+                    <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col">
+                        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                <i data-lucide="clipboard-check" class="w-4 h-4 text-emerald-600"></i>
+                                <span>Examiner's Scorecard & Rubric</span>
+                            </h3>
+                            <span id="eval-badge" class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600">Awaiting Submission</span>
+                        </div>
+
+                        <div id="eval-result" class="flex-1 overflow-y-auto py-4 text-sm text-slate-700 leading-relaxed space-y-3">
+                            <div class="text-center py-16 text-slate-400">
+                                <i data-lucide="file-text" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
+                                <p class="text-sm">Submit your question and answer on the left to see your step marks and detailed examiner feedback.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 3: MCQ PRACTICE ZONE ================= -->
+        <section id="section-mcq" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <!-- Header Controls -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div class="w-full md:w-auto">
+                        <h2 class="text-lg font-black text-slate-800">Interactive MCQ Practice Zone</h2>
+                        <p class="text-xs text-slate-500">Practice chapter-wise MCQs formatted with negative marking and ICAI-style reasoning.</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <select id="mcq-subject" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700">
+                            <option value="CA Inter - Taxation">CA Inter - Taxation</option>
+                            <option value="CA Inter - Corporate Law">CA Inter - Corporate Law</option>
+                            <option value="CA Inter - Costing">CA Inter - Costing</option>
+                            <option value="CA Inter - Auditing">CA Inter - Auditing</option>
+                        </select>
+                        <input type="text" id="mcq-topic" placeholder="Chapter (e.g. Buyback, Sec 115BAC)" value="Section 115BAC & Slabs" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 w-44">
+                        <button onclick="generateMCQs()" id="mcq-gen-btn" class="bg-excel-navy hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                            <span>Generate Quiz</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Score Banner -->
+                <div id="quiz-score-strip" class="hidden bg-slate-900 text-white rounded-xl p-4 flex items-center justify-between">
+                    <div class="flex items-center gap-4 text-xs">
+                        <div>Question: <span id="quiz-progress" class="font-bold text-amber-400">1 / 5</span></div>
+                        <div>Score: <span id="quiz-score" class="font-bold text-emerald-400">0</span></div>
+                    </div>
+                    <div class="text-xs text-slate-300">Exam Mode: <span class="text-amber-300 font-semibold">ICAI Standards</span></div>
+                </div>
+
+                <!-- Question Card -->
+                <div id="mcq-container" class="bg-white rounded-2xl p-8 border border-slate-200 shadow-sm space-y-6">
+                    <div class="text-center py-12 text-slate-400">
+                        <i data-lucide="help-circle" class="w-12 h-12 mx-auto mb-3 opacity-40"></i>
+                        <p class="text-sm font-medium">Click "Generate Quiz" above to start an exam-style MCQ set.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 4: STUDY MATERIALS & PDF UPLOADER ================= -->
+        <section id="section-materials" class="tab-content hidden">
+            <div class="max-w-5xl mx-auto space-y-6">
+                <!-- Upload Box -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <h3 class="text-base font-bold text-slate-800 mb-1 flex items-center gap-2">
+                        <i data-lucide="upload-cloud" class="w-5 h-5 text-excel-600"></i>
+                        <span>Upload Coaching Study Material PDFs</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 mb-4">Add your institute's own study notes, RTPs, MTPs, or chapter modules. The AI Coach will index and reference them in every answer.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Target Subject Folder</label>
+                            <select id="upload-subject-select" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700">
+                                <option value="CA_Inter_Taxation">CA_Inter_Taxation</option>
+                                <option value="CA_Inter_Corporate_Law">CA_Inter_Corporate_Law</option>
+                                <option value="CA_Inter_Costing">CA_Inter_Costing</option>
+                                <option value="CA_Inter_Auditing">CA_Inter_Auditing</option>
+                                <option value="CS_Executive_Company_Law">CS_Executive_Company_Law</option>
+                                <option value="CMA_Direct_Tax">CMA_Direct_Tax</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Choose PDF File</label>
+                            <input type="file" id="material-pdf-file" accept=".pdf" class="w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-excel-50 file:text-excel-700 hover:file:bg-excel-100">
+                        </div>
+
+                        <button onclick="uploadStudyMaterial()" id="upload-material-btn" class="bg-excel-navy hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition flex items-center justify-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span>Upload & Index PDF</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Indexed Knowledge Base Overview -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="database" class="w-5 h-5 text-amber-500"></i>
+                            <span>Active Indexed Knowledge Base</span>
+                        </h3>
+                        <span id="total-chunks-badge" class="text-xs bg-excel-50 text-excel-800 px-3 py-1 rounded-full font-bold">Loading...</span>
+                    </div>
+
+                    <div id="subject-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 5: SHARE TO ANY PC & API SETTINGS ================= -->
+        <section id="section-share" class="tab-content hidden">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <!-- Share to Any PC Guide -->
+                <div class="bg-gradient-to-r from-excel-navy via-slate-900 to-excel-800 text-white rounded-2xl p-6 shadow-md space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-xl font-black flex items-center gap-2">
+                            <i data-lucide="globe" class="w-6 h-6 text-amber-400"></i>
+                            <span>Showcase on Any PC or Phone (Live Public URL)</span>
+                        </h2>
+                        <span class="bg-emerald-500/20 text-emerald-300 text-xs font-bold px-2.5 py-1 rounded-full border border-emerald-400/30">Free & Instant</span>
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        You can showcase this exact prototype to directors, teachers, and students on <strong>any PC or smartphone anywhere in the world</strong> in two ways:
+                    </p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                        <div class="bg-white/10 rounded-xl p-4 border border-white/10">
+                            <h4 class="text-xs font-bold uppercase text-amber-300 mb-1 flex items-center gap-1.5">
+                                <span>Method 1: Instant Tunnel (Zero Setup)</span>
+                            </h4>
+                            <p class="text-xs text-slate-200">Run Cloudflare Tunnel or Localtunnel to generate a live public HTTPS link instantly while running on your laptop.</p>
+                            <code class="block mt-2 bg-black/40 px-2 py-1.5 rounded text-[11px] font-mono text-amber-200">python share_tunnel.py</code>
+                        </div>
+
+                        <div class="bg-white/10 rounded-xl p-4 border border-white/10">
+                            <h4 class="text-xs font-bold uppercase text-amber-300 mb-1 flex items-center gap-1.5">
+                                <span>Method 2: 24/7 Cloud (Hugging Face Spaces)</span>
+                            </h4>
+                            <p class="text-xs text-slate-200">Deploy with 1 click to Hugging Face Spaces for a permanent 24/7 free URL (runs even when your laptop is turned off!).</p>
+                            <span class="inline-block mt-2 text-[11px] text-emerald-300 font-semibold">Includes pre-configured Dockerfile</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- API Key Configuration -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="key" class="w-5 h-5 text-amber-500"></i>
+                        <span>Google Gemini API Key (100% Free Tier)</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 leading-relaxed">
+                        To activate live Gemini 1.5 Flash AI (with vision for handwritten answer checking), enter a free API key from 
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-excel-600 font-bold underline">Google AI Studio</a>. 
+                        <em>(No credit card required. Free tier gives 15 requests/minute & 1M tokens/min).</em>
+                    </p>
+
+                    <div class="flex items-center gap-3">
+                        <input type="password" id="gemini-key-input" placeholder="AIzaSy..." class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-excel-600">
+                        <button onclick="saveApiKey()" id="save-key-btn" class="bg-excel-navy hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition">
+                            Save Key
+                        </button>
+                    </div>
+                    <div id="key-status-msg" class="text-xs font-semibold"></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+        <p>Excel Educational Institute • Excel AI Coach Prototype • Grounded in Official ICAI / ICSI / ICMAI Curriculum</p>
+    </footer>
+
+    <!-- App JavaScript -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
