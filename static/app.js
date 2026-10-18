@@ -1,22 +1,25 @@
-// Excel AI - Minimalist Unified Frontend
+// Excel AI - Classy ChatGPT-style Mobile & Desktop Engine
 
 let selectedFile = null;
 let isRecording = false;
 let speechRecognizer = null;
+let currentSessionId = null;
+let chatSessions = [];
 
 document.addEventListener("DOMContentLoaded", () => {
     lucide.createIcons();
     initClipboardPaste();
     initSpeechRecognition();
+    loadSessionsFromStorage();
 });
 
-// Auto-resize textarea as user types
+// Auto-resize textarea
 function autoResize(textarea) {
     textarea.style.height = "auto";
     textarea.style.height = Math.min(textarea.scrollHeight, 140) + "px";
 }
 
-// Enter to send (Shift+Enter for newline)
+// Enter to send
 function handleKeyDown(event) {
     if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -24,7 +27,21 @@ function handleKeyDown(event) {
     }
 }
 
-// Quick Suggestion Click
+// Toggle Sidebar (Mobile & Desktop)
+function toggleSidebar(open) {
+    const sidebar = document.getElementById("chat-sidebar");
+    const backdrop = document.getElementById("sidebar-backdrop");
+
+    if (open) {
+        sidebar.classList.remove("-translate-x-full");
+        backdrop.classList.remove("hidden");
+    } else {
+        sidebar.classList.add("-translate-x-full");
+        backdrop.classList.add("hidden");
+    }
+}
+
+// Quick Prompt Click
 function usePrompt(text) {
     const input = document.getElementById("chat-input");
     input.value = text;
@@ -33,20 +50,147 @@ function usePrompt(text) {
     sendMessage();
 }
 
-// New Chat
-function newChat() {
+// ----------------- CHAT SESSIONS & HISTORY -----------------
+
+function loadSessionsFromStorage() {
+    try {
+        const stored = localStorage.getItem("excel_ai_sessions");
+        chatSessions = stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        chatSessions = [];
+    }
+
+    if (chatSessions.length === 0) {
+        startNewChat();
+    } else {
+        // Load most recent session
+        currentSessionId = chatSessions[0].id;
+        renderHistory();
+        renderActiveSessionMessages();
+    }
+}
+
+function saveSessionsToStorage() {
+    try {
+        localStorage.setItem("excel_ai_sessions", JSON.stringify(chatSessions));
+    } catch (e) {
+        console.error("Storage save failed:", e);
+    }
+    renderHistory();
+}
+
+function startNewChat() {
+    currentSessionId = "session_" + Date.now();
+    const newSession = {
+        id: currentSessionId,
+        title: "New Chat",
+        createdAt: Date.now(),
+        messages: []
+    };
+    chatSessions.unshift(newSession);
+    saveSessionsToStorage();
+
+    // Reset UI to welcome screen
     document.getElementById("messages-container").innerHTML = "";
     document.getElementById("messages-container").classList.add("hidden");
     document.getElementById("welcome-view").classList.remove("hidden");
     document.getElementById("chat-input").value = "";
     autoResize(document.getElementById("chat-input"));
     clearAttachment();
+
+    // Close sidebar on mobile
+    toggleSidebar(false);
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
     }
 }
 
-// File Attachment Handling (Photo / PDF)
+function switchSession(id) {
+    currentSessionId = id;
+    renderHistory();
+    renderActiveSessionMessages();
+    toggleSidebar(false);
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+    }
+}
+
+function deleteSession(event, id) {
+    event.stopPropagation();
+    chatSessions = chatSessions.filter(s => s.id !== id);
+    if (currentSessionId === id) {
+        if (chatSessions.length > 0) {
+            currentSessionId = chatSessions[0].id;
+            renderActiveSessionMessages();
+        } else {
+            startNewChat();
+            return;
+        }
+    }
+    saveSessionsToStorage();
+}
+
+function renderHistory() {
+    const list = document.getElementById("history-list");
+    if (!list) return;
+
+    if (chatSessions.length === 0) {
+        list.innerHTML = `<p class="px-3 py-2 text-xs text-neutral-500 italic">No previous chats</p>`;
+        return;
+    }
+
+    list.innerHTML = chatSessions.map(session => {
+        const isActive = session.id === currentSessionId;
+        const activeClass = isActive 
+            ? "bg-[#212121] text-white font-semibold border border-[#333333]" 
+            : "text-neutral-400 hover:text-white hover:bg-[#1f1f1f]";
+
+        return `
+            <div onclick="switchSession('${session.id}')" class="group flex items-center justify-between px-3 py-2 rounded-xl text-xs cursor-pointer transition ${activeClass}">
+                <div class="flex items-center gap-2 truncate flex-1 min-w-0">
+                    <i data-lucide="message-square" class="w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-amber-400' : 'text-neutral-500'}"></i>
+                    <span class="truncate">${escapeHtml(session.title || 'Conversation')}</span>
+                </div>
+                <button onclick="deleteSession(event, '${session.id}')" title="Delete chat" class="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1 rounded transition">
+                    <i data-lucide="trash-2" class="w-3 h-3"></i>
+                </button>
+            </div>
+        `;
+    }).join("");
+    lucide.createIcons();
+}
+
+function renderActiveSessionMessages() {
+    const session = chatSessions.find(s => s.id === currentSessionId);
+    const container = document.getElementById("messages-container");
+    const welcome = document.getElementById("welcome-view");
+
+    if (!session || session.messages.length === 0) {
+        container.innerHTML = "";
+        container.classList.add("hidden");
+        welcome.classList.remove("hidden");
+        return;
+    }
+
+    welcome.classList.add("hidden");
+    container.classList.remove("hidden");
+    container.innerHTML = "";
+
+    session.messages.forEach(msg => {
+        if (msg.role === "user") {
+            appendUserBubble(msg.content, msg.imageUrl, false);
+        } else {
+            appendAssistantBubble(msg.content, false);
+        }
+    });
+
+    const viewport = document.getElementById("chat-viewport");
+    viewport.scrollTop = viewport.scrollHeight;
+    lucide.createIcons();
+}
+
+// ----------------- FILE ATTACHMENTS -----------------
+
 function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -85,7 +229,7 @@ function clearAttachment() {
     document.getElementById("attachment-thumb").src = "";
 }
 
-// Clipboard Paste (e.g. Ctrl + V to paste screenshot directly into chat)
+// Clipboard Paste
 function initClipboardPaste() {
     window.addEventListener("paste", (event) => {
         const items = (event.clipboardData || event.originalEvent.clipboardData).items;
@@ -99,20 +243,21 @@ function initClipboardPaste() {
     });
 }
 
-// Voice Note (Speech-to-Text)
+// ----------------- VOICE RECOGNITION -----------------
+
 function initSpeechRecognition() {
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRec) {
         speechRecognizer = new SpeechRec();
         speechRecognizer.continuous = false;
         speechRecognizer.interimResults = false;
-        speechRecognizer.lang = "en-IN"; // English (India)
+        speechRecognizer.lang = "en-IN";
 
         speechRecognizer.onstart = () => {
             isRecording = true;
             document.getElementById("voice-indicator").classList.remove("hidden");
             document.getElementById("mic-icon").setAttribute("data-lucide", "square");
-            document.getElementById("voice-btn").classList.add("text-red-500", "bg-red-50");
+            document.getElementById("voice-btn").classList.add("text-red-400", "bg-red-950/40");
             lucide.createIcons();
         };
 
@@ -127,7 +272,7 @@ function initSpeechRecognition() {
             isRecording = false;
             document.getElementById("voice-indicator").classList.add("hidden");
             document.getElementById("mic-icon").setAttribute("data-lucide", "mic");
-            document.getElementById("voice-btn").classList.remove("text-red-500", "bg-red-50");
+            document.getElementById("voice-btn").classList.remove("text-red-400", "bg-red-950/40");
             lucide.createIcons();
         };
 
@@ -136,7 +281,7 @@ function initSpeechRecognition() {
             isRecording = false;
             document.getElementById("voice-indicator").classList.add("hidden");
             document.getElementById("mic-icon").setAttribute("data-lucide", "mic");
-            document.getElementById("voice-btn").classList.remove("text-red-500", "bg-red-50");
+            document.getElementById("voice-btn").classList.remove("text-red-400", "bg-red-950/40");
             lucide.createIcons();
         };
     }
@@ -154,7 +299,8 @@ function toggleVoiceInput() {
     }
 }
 
-// Send Message
+// ----------------- SENDING MESSAGES -----------------
+
 async function sendMessage() {
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
@@ -162,45 +308,42 @@ async function sendMessage() {
 
     if (!text && !currentAttachment) return;
 
-    // Switch from welcome view to message stream
+    // Ensure session exists
+    let session = chatSessions.find(s => s.id === currentSessionId);
+    if (!session) {
+        startNewChat();
+        session = chatSessions[0];
+    }
+
+    // Auto-name chat title on first message
+    if (session.messages.length === 0 && text) {
+        session.title = text.length > 28 ? text.substring(0, 28) + "..." : text;
+    }
+
+    // Switch view
     document.getElementById("welcome-view").classList.add("hidden");
     const container = document.getElementById("messages-container");
     container.classList.remove("hidden");
 
-    // 1. Render User Message Bubble
-    let attachmentHtml = "";
+    // 1. Render User Bubble
+    let imageUrl = "";
     if (currentAttachment && currentAttachment.type.startsWith("image/")) {
-        const tempUrl = URL.createObjectURL(currentAttachment);
-        attachmentHtml = `
-            <div class="mb-2">
-                <img src="${tempUrl}" class="max-h-48 rounded-xl border border-slate-700/50 shadow-sm" alt="attachment">
-            </div>
-        `;
-    } else if (currentAttachment) {
-        attachmentHtml = `
-            <div class="mb-2 text-xs bg-slate-800 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                <i data-lucide="file" class="w-3.5 h-3.5 text-slate-300"></i>
-                <span class="truncate">${escapeHtml(currentAttachment.name)}</span>
-            </div>
-        `;
+        imageUrl = URL.createObjectURL(currentAttachment);
     }
+    appendUserBubble(text, imageUrl, true);
 
-    const userDiv = document.createElement("div");
-    userDiv.className = "flex justify-end";
-    userDiv.innerHTML = `
-        <div class="bg-slate-900 text-white rounded-2xl rounded-tr-sm px-4 py-3 max-w-xl text-sm leading-relaxed shadow-sm">
-            ${attachmentHtml}
-            ${text ? `<p>${escapeHtml(text)}</p>` : ''}
-        </div>
-    `;
-    container.appendChild(userDiv);
-    lucide.createIcons();
+    // Save user message to session
+    session.messages.push({
+        role: "user",
+        content: text,
+        imageUrl: imageUrl
+    });
+    saveSessionsToStorage();
 
-    // Reset input and attachment
+    // Reset input
     input.value = "";
     autoResize(input);
     clearAttachment();
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 
     // 2. Render Loading State
     const loadingId = "loader-" + Date.now();
@@ -208,18 +351,18 @@ async function sendMessage() {
     loadingDiv.id = loadingId;
     loadingDiv.className = "flex gap-3 items-start max-w-2xl";
     loadingDiv.innerHTML = `
-        <div class="w-8 h-8 rounded-xl bg-amber-500 text-slate-900 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-900 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-md">
             E
         </div>
-        <div class="bg-white border border-slate-200/80 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm flex items-center gap-2 text-xs font-medium text-slate-500">
-            <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>
-            <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse" style="animation-delay: 0.2s"></span>
-            <span class="w-2 h-2 rounded-full bg-slate-400 animate-pulse" style="animation-delay: 0.4s"></span>
-            <span class="ml-1 text-slate-600">Excel AI is analyzing...</span>
+        <div class="bg-[#2a2a2a] border border-[#383838] rounded-2xl rounded-tl-sm px-4 py-3 shadow-md flex items-center gap-2 text-xs font-medium text-neutral-400">
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" style="animation-delay: 0.2s"></span>
+            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" style="animation-delay: 0.4s"></span>
+            <span class="ml-1 text-neutral-300">Excel AI is thinking...</span>
         </div>
     `;
     container.appendChild(loadingDiv);
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    scrollChatToBottom();
 
     // 3. Make API Call
     const formData = new FormData();
@@ -237,45 +380,88 @@ async function sendMessage() {
         const loader = document.getElementById(loadingId);
         if (loader) loader.remove();
 
-        const rawMarkdown = data.reply || "I could not generate an answer at this moment. Please try again.";
-        const renderedHtml = marked.parse(rawMarkdown);
+        const replyMarkdown = data.reply || "I could not generate an answer right now. Please try again.";
 
-        // 4. Render Assistant Message
-        const aiDiv = document.createElement("div");
-        aiDiv.className = "flex gap-3 items-start";
-        aiDiv.innerHTML = `
-            <div class="w-8 h-8 rounded-xl bg-amber-500 text-slate-900 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-sm mt-1">
-                E
-            </div>
-            <div class="flex-1 bg-white border border-slate-200/80 rounded-2xl rounded-tl-sm p-5 shadow-sm space-y-3">
-                <div class="markdown-body">
-                    ${renderedHtml}
-                </div>
-                <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                    <span class="text-[11px] font-medium text-slate-400">Excel AI Exam Coach</span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(rawMarkdown)}" title="Copy response" class="p-1 hover:text-slate-700 transition flex items-center gap-1 text-[11px] font-medium">
-                            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                            <span>Copy</span>
-                        </button>
-                        <button onclick="readAloud(this)" data-text="${escapeQuotes(rawMarkdown.replace(/[#*`_]/g, ''))}" title="Listen to answer" class="p-1 hover:text-amber-600 transition flex items-center gap-1 text-[11px] font-medium">
-                            <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>
-                            <span>Listen</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-        container.appendChild(aiDiv);
-        lucide.createIcons();
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        // 4. Render Assistant Bubble
+        appendAssistantBubble(replyMarkdown, true);
+
+        // Save assistant message to session
+        session.messages.push({
+            role: "assistant",
+            content: replyMarkdown
+        });
+        saveSessionsToStorage();
 
     } catch (err) {
         console.error(err);
         const loader = document.getElementById(loadingId);
         if (loader) loader.remove();
-        alert("Unable to reach Excel AI. Please make sure the server is running.");
+        alert("Failed to communicate with Excel AI server.");
     }
+}
+
+function appendUserBubble(text, imageUrl, scroll) {
+    const container = document.getElementById("messages-container");
+    const userDiv = document.createElement("div");
+    userDiv.className = "flex justify-end";
+
+    let imgHtml = "";
+    if (imageUrl) {
+        imgHtml = `
+            <div class="mb-2">
+                <img src="${imageUrl}" class="max-h-56 rounded-xl border border-neutral-700 shadow-md" alt="upload">
+            </div>
+        `;
+    }
+
+    userDiv.innerHTML = `
+        <div class="bg-[#2f2f2f] text-neutral-100 rounded-3xl rounded-tr-sm px-4 py-3 max-w-xl text-sm leading-relaxed shadow-md border border-[#3d3d3d]">
+            ${imgHtml}
+            ${text ? `<p class="whitespace-pre-wrap">${escapeHtml(text)}</p>` : ''}
+        </div>
+    `;
+    container.appendChild(userDiv);
+    if (scroll) scrollChatToBottom();
+}
+
+function appendAssistantBubble(markdownText, scroll) {
+    const container = document.getElementById("messages-container");
+    const aiDiv = document.createElement("div");
+    aiDiv.className = "flex gap-3 items-start";
+
+    const renderedHtml = marked.parse(markdownText);
+
+    aiDiv.innerHTML = `
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-900 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-md mt-1">
+            E
+        </div>
+        <div class="flex-1 bg-[#282828] border border-[#383838] rounded-3xl rounded-tl-sm p-5 shadow-lg space-y-3">
+            <div class="markdown-body">
+                ${renderedHtml}
+            </div>
+            <div class="pt-2 border-t border-[#333333] flex items-center justify-between text-xs text-neutral-400">
+                <span class="text-[11px] font-semibold text-amber-400/80">ICAI / ICSI Standard</span>
+                <div class="flex items-center gap-2">
+                    <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(markdownText)}" title="Copy response" class="p-1 hover:text-white transition flex items-center gap-1 text-[11px] font-medium">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        <span>Copy</span>
+                    </button>
+                    <button onclick="readAloud(this)" data-text="${escapeQuotes(markdownText.replace(/[#*`_]/g, ''))}" title="Listen to response" class="p-1 hover:text-amber-400 transition flex items-center gap-1 text-[11px] font-medium">
+                        <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>
+                        <span>Listen</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    container.appendChild(aiDiv);
+    lucide.createIcons();
+    if (scroll) scrollChatToBottom();
+}
+
+function scrollChatToBottom() {
+    const viewport = document.getElementById("chat-viewport");
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
 }
 
 // Copy to clipboard
@@ -290,7 +476,7 @@ function copyToClipboard(btn) {
     });
 }
 
-// Text-to-Speech (Read Aloud)
+// Text-to-Speech
 function readAloud(btn) {
     const text = btn.getAttribute("data-text");
     if (!text || !('speechSynthesis' in window)) return;

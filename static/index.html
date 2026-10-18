@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Excel AI | Commerce Exam Coach</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -11,15 +11,14 @@
             theme: {
                 extend: {
                     colors: {
-                        brand: {
-                            50: '#f8fafc',
-                            100: '#f1f5f9',
-                            800: '#1e293b',
-                            900: '#0f172a',
-                            gold: '#f59e0b',
-                            goldLight: '#fef3c7',
-                            primary: '#0284c7',
-                            primaryDark: '#0369a1'
+                        gpt: {
+                            sidebar: '#171717',
+                            sidebarHover: '#212121',
+                            sidebarBorder: '#2f2f2f',
+                            bg: '#212121',
+                            card: '#2f2f2f',
+                            input: '#2f2f2f',
+                            gold: '#f59e0b'
                         }
                     }
                 }
@@ -32,140 +31,181 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="bg-[#f8fafc] text-slate-800 font-sans min-h-screen flex flex-col antialiased">
+<body class="bg-[#212121] text-[#ececec] font-sans h-screen flex overflow-hidden antialiased select-none">
 
-    <!-- Top Minimalist Header -->
-    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-slate-200/80 px-4 py-3">
-        <div class="max-w-4xl mx-auto flex items-center justify-between">
-            <!-- Brand -->
-            <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center shadow-sm font-black text-slate-900 text-lg">
-                    E
-                </div>
-                <div>
-                    <h1 class="font-bold text-base tracking-tight text-slate-900 flex items-center gap-1.5">
-                        <span>Excel AI</span>
-                        <span class="text-[11px] font-semibold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-200">Coach</span>
-                    </h1>
-                    <p class="text-[11px] text-slate-400 font-medium">Excel Educational Institute • CA | CS | CMA</p>
-                </div>
-            </div>
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="fixed inset-0 bg-black/60 z-40 hidden transition-opacity duration-300"></div>
 
-            <!-- New Chat Button -->
-            <button onclick="newChat()" class="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition">
-                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+    <!-- Collapsible Left Sidebar (ChatGPT Style) -->
+    <aside id="chat-sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-[#171717] border-r border-[#2f2f2f] flex flex-col transform -translate-x-full md:translate-x-0 md:static transition-transform duration-300 ease-in-out">
+        
+        <!-- Sidebar Header (New Chat & Close) -->
+        <div class="p-3.5 flex items-center justify-between border-b border-[#262626]">
+            <button onclick="startNewChat()" class="flex-1 flex items-center gap-2 bg-[#212121] hover:bg-[#2a2a2a] text-[#ececec] text-xs font-semibold px-3 py-2.5 rounded-xl border border-[#2f2f2f] transition shadow-sm">
+                <i data-lucide="plus" class="w-4 h-4 text-amber-400"></i>
                 <span>New Chat</span>
             </button>
+            <button onclick="toggleSidebar(false)" class="md:hidden ml-2 p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-[#262626] transition">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
         </div>
-    </header>
 
-    <!-- Chat Viewport -->
-    <main class="flex-1 max-w-4xl w-full mx-auto flex flex-col px-4 pt-4 pb-36">
-
-        <!-- Welcome Banner (Visible on empty chat) -->
-        <div id="welcome-view" class="my-auto py-12 flex flex-col items-center text-center max-w-xl mx-auto space-y-6">
-            <div class="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shadow-sm">
-                <i data-lucide="sparkles" class="w-7 h-7 text-amber-500"></i>
-            </div>
-            
-            <div class="space-y-2">
-                <h2 class="text-2xl font-bold text-slate-900 tracking-tight">How can Excel AI help you today?</h2>
-                <p class="text-sm text-slate-500 leading-relaxed">
-                    Ask any doubt, paste a question, upload your handwritten answer sheet for checking, or practice MCQs.
-                </p>
-            </div>
-
-            <!-- Quick Suggestion Cards -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left pt-2">
-                <button onclick="usePrompt('Explain Section 115BAC new tax regime vs old regime, including key slab rates and eligible deductions.')" class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition text-xs group">
-                    <p class="font-bold text-slate-800 flex items-center gap-1.5">
-                        <i data-lucide="calculator" class="w-3.5 h-3.5 text-amber-500"></i>
-                        <span>Section 115BAC Slabs</span>
-                    </p>
-                    <p class="text-slate-500 mt-1 line-clamp-1">New default tax regime, tax slabs, and Sec 87A rebate</p>
-                </button>
-
-                <button onclick="usePrompt('Evaluate my answer for this question and tell me my marks: [Paste your answer or click the paperclip below to upload a photo of your handwritten sheet]')" class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition text-xs group">
-                    <p class="font-bold text-slate-800 flex items-center gap-1.5">
-                        <i data-lucide="file-check" class="w-3.5 h-3.5 text-sky-500"></i>
-                        <span>Check My Answer Sheet</span>
-                    </p>
-                    <p class="text-slate-500 mt-1 line-clamp-1">Upload handwritten answer photo or paste text for step marks</p>
-                </button>
-
-                <button onclick="usePrompt('What are the statutory conditions and quantum limits for buy-back of shares under Section 68 of Companies Act?')" class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition text-xs group">
-                    <p class="font-bold text-slate-800 flex items-center gap-1.5">
-                        <i data-lucide="scale" class="w-3.5 h-3.5 text-indigo-500"></i>
-                        <span>Companies Act: Buyback</span>
-                    </p>
-                    <p class="text-slate-500 mt-1 line-clamp-1">Section 68 rules, limits, and debt-equity criteria</p>
-                </button>
-
-                <button onclick="usePrompt('Generate 5 exam-level MCQs on Standard Costing with options and ICAI-style reasoning.')" class="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition text-xs group">
-                    <p class="font-bold text-slate-800 flex items-center gap-1.5">
-                        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i>
-                        <span>Generate 5 Practice MCQs</span>
-                    </p>
-                    <p class="text-slate-500 mt-1 line-clamp-1">Interactive questions with full reasoning</p>
-                </button>
+        <!-- Chat History List -->
+        <div class="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+            <div>
+                <p class="px-3 text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">Recent Sessions</p>
+                <div id="history-list" class="space-y-1">
+                    <!-- Populated by JS -->
+                </div>
             </div>
         </div>
 
-        <!-- Chat Messages Container -->
-        <div id="messages-container" class="space-y-6 hidden">
-            <!-- Messages injected dynamically -->
+        <!-- Sidebar Footer (Institute Profile) -->
+        <div class="p-3 border-t border-[#262626] bg-[#141414]">
+            <div class="flex items-center gap-2.5 px-2 py-1.5 rounded-xl">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center font-black text-slate-900 text-sm shadow-sm">
+                    E
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Excel AI Coach</p>
+                    <p class="text-[10px] text-neutral-400 truncate">CA • CS • CMA Exam Engine</p>
+                </div>
+            </div>
         </div>
 
-    </main>
+    </aside>
 
-    <!-- Bottom Input Area (Sticky / Floating) -->
-    <div class="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent pt-6 pb-5 px-4 z-40">
-        <div class="max-w-3xl mx-auto">
+    <!-- Main Chat Container -->
+    <div class="flex-1 flex flex-col h-full bg-[#212121] relative overflow-hidden">
 
-            <!-- Attachment Preview Pill (Hidden by default) -->
-            <div id="attachment-preview" class="hidden mb-2 inline-flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-medium text-slate-700">
-                <img id="attachment-thumb" class="w-6 h-6 object-cover rounded hidden" alt="thumb">
-                <i id="attachment-icon" data-lucide="file-text" class="w-4 h-4 text-sky-600"></i>
-                <span id="attachment-name" class="truncate max-w-[200px]">Attached file</span>
-                <button onclick="clearAttachment()" class="text-slate-400 hover:text-red-500 transition ml-1">
-                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        <!-- Top Minimalist Bar -->
+        <header class="h-14 border-b border-[#2f2f2f] px-4 flex items-center justify-between bg-[#212121]/90 backdrop-blur-md z-20 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <!-- Hamburger Menu Button -->
+                <button onclick="toggleSidebar(true)" class="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-[#2f2f2f] transition">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
                 </button>
+                <div class="flex items-center gap-2">
+                    <span class="font-bold text-sm tracking-tight text-white">Excel AI</span>
+                    <span class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-semibold">ICAI/ICSI Standards</span>
+                </div>
             </div>
 
-            <!-- Voice Recording Status Indicator -->
-            <div id="voice-indicator" class="hidden mb-2 flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-semibold text-amber-800 animate-pulse">
-                <span class="w-2 h-2 rounded-full bg-red-500"></span>
-                <span>Listening to your voice note... Click mic again when done.</span>
-            </div>
+            <!-- New Chat Quick Action -->
+            <button onclick="startNewChat()" class="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-[#2f2f2f] transition" title="Start New Conversation">
+                <i data-lucide="square-pen" class="w-4 h-4"></i>
+            </button>
+        </header>
 
-            <!-- Main Input Pill Box -->
-            <div class="bg-white border border-slate-200/90 rounded-2xl shadow-lg p-2 flex items-end gap-2 focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-200/60 transition">
+        <!-- Message Stream Viewport -->
+        <main id="chat-viewport" class="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-6">
+
+            <!-- Empty State / Welcome Screen -->
+            <div id="welcome-view" class="my-auto py-12 flex flex-col items-center text-center max-w-xl mx-auto space-y-6 select-text">
+                <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center shadow-lg font-black text-slate-900 text-2xl">
+                    E
+                </div>
                 
-                <!-- Attachment Button (Photo of handwritten answer / PDF) -->
-                <button onclick="document.getElementById('file-input').click()" title="Attach photo of handwritten answer or PDF" class="p-2.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition flex-shrink-0">
-                    <i data-lucide="paperclip" class="w-5 h-5"></i>
-                </button>
-                <input type="file" id="file-input" accept="image/*,.pdf" class="hidden" onchange="handleFileSelect(event)">
+                <div class="space-y-1.5">
+                    <h2 class="text-xl md:text-2xl font-bold text-white tracking-tight">What do you want to master today?</h2>
+                    <p class="text-xs md:text-sm text-neutral-400">
+                        Ask conceptual doubts, paste exam questions, upload handwritten answers for checking, or practice MCQs.
+                    </p>
+                </div>
 
-                <!-- Textarea (Auto-expanding) -->
-                <textarea id="chat-input" rows="1" placeholder="Ask a doubt, paste a question, or upload your answer..." class="flex-1 bg-transparent resize-none border-0 p-2 text-sm text-slate-800 focus:outline-none focus:ring-0 max-h-36 leading-relaxed" onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+                <!-- Classy Suggestion Pills -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left pt-2">
+                    <button onclick="usePrompt('Explain Section 115BAC new tax regime vs old regime, including key slab rates and eligible deductions.')" class="p-3.5 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-neutral-500 transition text-xs text-neutral-200">
+                        <p class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="calculator" class="w-3.5 h-3.5 text-amber-400"></i>
+                            <span>Section 115BAC Slabs</span>
+                        </p>
+                        <p class="text-neutral-400 mt-1 line-clamp-1">New default tax regime, tax slabs & Sec 87A rebate</p>
+                    </button>
 
-                <!-- Voice Note Button -->
-                <button id="voice-btn" onclick="toggleVoiceInput()" title="Voice Note" class="p-2.5 rounded-xl text-slate-400 hover:text-amber-600 hover:bg-slate-100 transition flex-shrink-0">
-                    <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
-                </button>
+                    <button onclick="usePrompt('Check my answer for this question and give step-wise marks: [Attach photo or paste answer]')" class="p-3.5 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-neutral-500 transition text-xs text-neutral-200">
+                        <p class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="file-check-2" class="w-3.5 h-3.5 text-sky-400"></i>
+                            <span>Check Handwritten Paper</span>
+                        </p>
+                        <p class="text-neutral-400 mt-1 line-clamp-1">Step-wise marks out of 10 & examiner feedback</p>
+                    </button>
 
-                <!-- Send Button -->
-                <button id="send-btn" onclick="sendMessage()" class="p-2.5 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition flex-shrink-0 shadow-sm disabled:opacity-30 disabled:cursor-not-allowed">
-                    <i data-lucide="arrow-up" class="w-4 h-4"></i>
-                </button>
+                    <button onclick="usePrompt('What are the statutory conditions and quantum limits for buy-back of shares under Section 68 of Companies Act?')" class="p-3.5 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-neutral-500 transition text-xs text-neutral-200">
+                        <p class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="scale" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            <span>Section 68 Buy-Back Rules</span>
+                        </p>
+                        <p class="text-neutral-400 mt-1 line-clamp-1">Board resolution, debt-equity ratio & 25% limits</p>
+                    </button>
 
+                    <button onclick="usePrompt('Generate 5 exam-level MCQs on Standard Costing with options and ICAI-style reasoning.')" class="p-3.5 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-neutral-500 transition text-xs text-neutral-200">
+                        <p class="font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i>
+                            <span>Practice 5 MCQs</span>
+                        </p>
+                        <p class="text-neutral-400 mt-1 line-clamp-1">Chapter test with detailed ICAI reasoning</p>
+                    </button>
+                </div>
             </div>
 
-            <p class="text-[11px] text-center text-slate-400 mt-2">
-                Excel AI helps you write answers in ICAI/ICSI/ICMAI exam standards. Verify numericals for practice.
-            </p>
-        </div>
+            <!-- Messages Thread Container -->
+            <div id="messages-container" class="max-w-3xl mx-auto space-y-6 hidden select-text">
+                <!-- Messages appended dynamically -->
+            </div>
+
+        </main>
+
+        <!-- Bottom Floating Input Area -->
+        <footer class="p-4 bg-gradient-to-t from-[#212121] via-[#212121] to-transparent z-20 flex-shrink-0">
+            <div class="max-w-3xl mx-auto">
+
+                <!-- Attachment Chip Preview -->
+                <div id="attachment-preview" class="hidden mb-2 inline-flex items-center gap-2 bg-[#2f2f2f] border border-[#404040] px-3 py-1.5 rounded-xl text-xs text-neutral-200">
+                    <img id="attachment-thumb" class="w-6 h-6 object-cover rounded hidden" alt="thumb">
+                    <i id="attachment-icon" data-lucide="file" class="w-4 h-4 text-amber-400"></i>
+                    <span id="attachment-name" class="truncate max-w-[200px]">Attached</span>
+                    <button onclick="clearAttachment()" class="text-neutral-400 hover:text-white transition ml-1">
+                        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+
+                <!-- Voice Recording Pill -->
+                <div id="voice-indicator" class="hidden mb-2 flex items-center gap-2 bg-red-950/60 border border-red-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-300 animate-pulse">
+                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span>Recording voice note... Click mic again to finish.</span>
+                </div>
+
+                <!-- Input Capsule -->
+                <div class="bg-[#2f2f2f] border border-[#404040] rounded-3xl p-1.5 flex items-end gap-1.5 shadow-xl focus-within:border-neutral-500 transition">
+                    
+                    <!-- Attachment Button -->
+                    <button onclick="document.getElementById('file-input').click()" title="Attach photo of handwritten answer sheet or question" class="p-2.5 rounded-full text-neutral-400 hover:text-white hover:bg-[#3a3a3a] transition flex-shrink-0">
+                        <i data-lucide="paperclip" class="w-5 h-5"></i>
+                    </button>
+                    <input type="file" id="file-input" accept="image/*,.pdf" class="hidden" onchange="handleFileSelect(event)">
+
+                    <!-- Textarea -->
+                    <textarea id="chat-input" rows="1" placeholder="Message Excel AI (Ask doubt, paste answer, or upload)..." class="flex-1 bg-transparent resize-none border-0 p-2 text-sm text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-0 max-h-36 leading-relaxed" onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+
+                    <!-- Voice Note Mic Button -->
+                    <button id="voice-btn" onclick="toggleVoiceInput()" title="Voice Note" class="p-2.5 rounded-full text-neutral-400 hover:text-amber-400 hover:bg-[#3a3a3a] transition flex-shrink-0">
+                        <i id="mic-icon" data-lucide="mic" class="w-5 h-5"></i>
+                    </button>
+
+                    <!-- Send Button -->
+                    <button id="send-btn" onclick="sendMessage()" class="p-2.5 rounded-full bg-white text-slate-900 hover:bg-neutral-200 transition flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <i data-lucide="arrow-up" class="w-4 h-4 font-bold"></i>
+                    </button>
+                </div>
+
+                <p class="text-[11px] text-center text-neutral-400 mt-2">
+                    Excel AI answers according to ICAI, ICSI, and ICMAI exam standards.
+                </p>
+
+            </div>
+        </footer>
+
     </div>
 
     <!-- App JavaScript -->
