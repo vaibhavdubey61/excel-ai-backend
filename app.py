@@ -1,5 +1,4 @@
 import os
-import shutil
 import base64
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -10,28 +9,28 @@ from pydantic import BaseModel
 from rag_engine import RAGEngine, STUDY_MATERIALS_DIR
 from ai_service import AIService
 
-app = FastAPI(title="Excel AI - Commerce Exam Coach", version="1.0.0")
+# Read API Key from environment or .env file
+API_KEY = os.getenv("GEMINI_API_KEY", "")
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if not API_KEY and os.path.exists(env_path):
+    try:
+        with open(env_path, "r") as f:
+            for line in f:
+                if line.startswith("GEMINI_API_KEY="):
+                    API_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+    except Exception:
+        pass
 
-# Initialize RAG Engine and AI Service
+app = FastAPI(title="Excel AI Coach", version="2.0.0")
+
+# Initialize RAG Engine and AI Service silently in the background
 rag = RAGEngine(storage_dir=STUDY_MATERIALS_DIR)
-ai = AIService(api_key=os.getenv("GEMINI_API_KEY", ""))
+ai = AIService(api_key=API_KEY)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-
-class ChatRequest(BaseModel):
-    query: str
-    subject: Optional[str] = "All"
-
-class MCQRequest(BaseModel):
-    subject: str
-    topic: str
-    count: Optional[int] = 5
-
-class APIKeyRequest(BaseModel):
-    api_key: str
 
 
 @app.get("/")
@@ -39,57 +38,16 @@ async def serve_index():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"message": "Excel AI Coach API is active. UI file index.html is being prepared."}
-
-
-@app.get("/api/stats")
-async def get_system_stats():
-    rag_stats = rag.get_stats()
-    return {
-        "status": "healthy",
-        "has_api_key": ai.has_api_key(),
-        "total_chunks": rag_stats["total_chunks"],
-        "total_pdfs": rag_stats["total_pdfs"],
-        "subjects": rag_stats["subjects"]
-    }
-
-
-@app.get("/api/subjects")
-async def get_subjects():
-    subjects = rag.get_subject_folders()
-    return {"subjects": subjects}
-
-
-@app.post("/api/set-api-key")
-async def set_api_key(req: APIKeyRequest):
-    key = req.api_key.strip()
-    ai.set_api_key(key)
-    return {
-        "success": True,
-        "message": "Gemini API Key updated successfully!",
-        "has_api_key": ai.has_api_key()
-    }
+    return {"message": "Excel AI is online."}
 
 
 @app.post("/api/chat")
-async def handle_doubt(req: ChatRequest):
-    if not req.query.strip():
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-    
-    # 1. Retrieve knowledge chunks via RAG
-    chunks = rag.search(query=req.query, subject=req.subject, top_k=4)
-    
-    # 2. Generate answer via AI Service
-    result = await ai.generate_doubt_answer(query=req.query, context_chunks=chunks, subject=req.subject or "")
-    return result
-
-
-@app.post("/api/evaluate")
-async def evaluate_answer(
-    question: str = Form(...),
-    student_answer_text: Optional[str] = Form(""),
+async def chat_endpoint(
+    message: Optional[str] = Form(""),
     file: Optional[UploadFile] = File(None)
 ):
+    """Unified endpoint: handles doubts, questions, handwritten answer photos, and files."""
+    user_text = (message or "").strip()
     image_b64 = ""
     mime_type = "image/jpeg"
 
@@ -98,48 +56,38 @@ async def evaluate_answer(
         mime_type = file.content_type or "image/jpeg"
         image_b64 = base64.b64encode(content_bytes).decode("utf-8")
 
-    if not student_answer_text and not image_b64:
-        raise HTTPException(status_code=400, detail="Please submit either written text or upload an answer sheet photo.")
+    if not user_text and not image_b64:
+        raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
 
-    result = await ai.evaluate_answer(
-        question=question,
-        student_answer_text=student_answer_text or "",
-        image_base64=image_b64,
-        mime_type=mime_type
+    # 1. Retrieve study material context silently
+    query_for_search = user_text if user_text else "Examine and evaluate student answer sheet"
+    chunks = rag.search(query=query_for_search, top_k=3)
+
+    # 2. Generate authoritative response without any source citations
+    reply_text = await ai.get_response(
+        message=user_text,
+        image_base64=image_b64 if image_b64 else None,
+        mime_type=mime_type,
+        context_chunks=chunks
     )
-    return result
+
+    return {"reply": reply_text}
 
 
-@app.post("/api/generate-mcq")
-async def generate_mcqs(req: MCQRequest):
-    result = await ai.generate_mcqs(subject=req.subject, topic=req.topic, count=req.count or 5)
-    return result
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok"}
 
 
-@app.post("/api/upload-pdf")
-async def upload_pdf(subject: str = Form(...), file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-
-    subject_dir = os.path.join(STUDY_MATERIALS_DIR, subject)
-    os.makedirs(subject_dir, exist_ok=True)
-
-    dest_path = os.path.join(subject_dir, file.filename)
-    with open(dest_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Reload and reindex knowledge base
+# Admin endpoint to silently refresh PDFs when new materials are added to study_materials folder
+@app.post("/api/admin/refresh-materials")
+async def refresh_materials():
     rag.load_all_materials()
-
-    return {
-        "success": True,
-        "message": f"File '{file.filename}' uploaded and indexed into '{subject}' successfully!",
-        "stats": rag.get_stats()
-    }
+    return {"status": "refreshed", "chunks": len(rag.chunks)}
 
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    print(f"Starting Excel AI Prototype on http://localhost:{port}")
+    print(f"Starting Excel AI on http://localhost:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
