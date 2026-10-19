@@ -1,10 +1,14 @@
 import os
+import re
+import json
 import base64
-from typing import Optional
+from datetime import datetime
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+import pypdf
 
 from rag_engine import RAGEngine, STUDY_MATERIALS_DIR
 from ai_service import AIService
@@ -31,7 +35,7 @@ if os.path.exists(env_path):
 
 app = FastAPI(title="Excel AI Coach", version="2.0.0")
 
-# Initialize Cloud Vector Store, Local RAG Fallback, and AI Engine
+# Initialize Cloud Vector Store, Local Fallback, and AI Engine
 cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINECONE_KEY, index_host=PINECONE_HOST)
 local_rag = RAGEngine(storage_dir=STUDY_MATERIALS_DIR)
 ai = AIService(api_key=GEMINI_KEY)
@@ -40,13 +44,41 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+CATALOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_catalog.json")
+
+def load_catalog_data() -> List[Dict[str, Any]]:
+    if os.path.exists(CATALOG_FILE):
+        try:
+            with open(CATALOG_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_catalog_data(data: List[Dict[str, Any]]):
+    try:
+        with open(CATALOG_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving catalog: {e}")
+
 
 @app.get("/")
 async def serve_index():
+    """Serves the clean student ChatGPT-style chat app."""
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Excel AI is online."}
+
+
+@app.get("/admin")
+async def serve_admin():
+    """Serves the clean drag-and-drop Study Material Manager for teachers/institute."""
+    admin_path = os.path.join(STATIC_DIR, "admin.html")
+    if os.path.exists(admin_path):
+        return FileResponse(admin_path)
+    return {"message": "Admin portal is loading."}
 
 
 @app.post("/api/chat")
@@ -85,6 +117,86 @@ async def chat_endpoint(
     )
 
     return {"reply": reply_text}
+
+
+@app.post("/api/admin/upload-cloud-pdf")
+async def upload_cloud_pdf(
+    file: UploadFile = File(...),
+    subject: str = Form("General")
+):
+    """Admin endpoint: ingests an uploaded coaching PDF directly into Pinecone Cloud."""
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    doc_name = file.filename
+    content_bytes = await file.read()
+
+    import io
+    pdf_stream = io.BytesIO(content_bytes)
+    reader = pypdf.PdfReader(pdf_stream)
+    total_pages = len(reader.pages)
+
+    chunks = []
+    for page_idx, page in enumerate(reader.pages):
+        text = page.extract_text() or ""
+        clean_text = re.sub(r'\s+', ' ', text).strip()
+        if len(clean_text) < 40:
+            continue
+
+        words = clean_text.split()
+        chunk_size = 300
+        overlap = 40
+        start = 0
+        chunk_id = 0
+        while start < len(words):
+            end = min(start + chunk_size, len(words))
+            block = " ".join(words[start:end])
+            safe_id = f"{doc_name}_p{page_idx+1}_c{chunk_id}".replace(" ", "_").replace(".", "_")
+            chunks.append({
+                "id": safe_id,
+                "subject": subject,
+                "doc_name": doc_name,
+                "section": f"Page {page_idx+1}",
+                "content": block
+            })
+            start += chunk_size - overlap
+            chunk_id += 1
+
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Could not extract readable text from this PDF.")
+
+    # Upload to Pinecone Cloud in batches of 20
+    batch_size = 20
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i+batch_size]
+        await cloud_store.upsert_chunks(batch)
+
+    # Save to catalog
+    now_ts = int(datetime.now().timestamp())
+    catalog = load_catalog_data()
+    catalog.insert(0, {
+        "id": f"mat_{now_ts}",
+        "doc_name": doc_name,
+        "subject": subject,
+        "pages": total_pages,
+        "chunks": len(chunks),
+        "uploaded_at": datetime.now().isoformat()
+    })
+    save_catalog_data(catalog)
+
+    return {
+        "success": True,
+        "message": f"Successfully indexed '{doc_name}' into Pinecone Cloud!",
+        "pages": total_pages,
+        "chunks_count": len(chunks)
+    }
+
+
+@app.get("/api/admin/materials")
+async def get_admin_materials():
+    """Lists all uploaded study materials in the cloud database."""
+    catalog = load_catalog_data()
+    return {"materials": catalog}
 
 
 @app.get("/api/health")

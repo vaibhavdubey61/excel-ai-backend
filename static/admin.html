@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Study Materials Manager | Excel AI Cloud</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased">
+
+    <!-- Top Admin Header -->
+    <header class="bg-slate-900 text-white border-b border-slate-800 px-6 py-4 shadow-md sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center font-black text-slate-950 text-lg shadow-sm">
+                    E
+                </div>
+                <div>
+                    <h1 class="font-bold text-base tracking-tight text-white flex items-center gap-2">
+                        <span>Excel AI Study Materials Portal</span>
+                        <span class="text-[10px] bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2 py-0.5 rounded-full font-semibold">Admin</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Upload coaching PDFs directly to Pinecone Cloud & Google AI</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <a href="/" class="text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-xl border border-slate-700 transition flex items-center gap-1.5">
+                    <i data-lucide="message-square" class="w-4 h-4 text-amber-400"></i>
+                    <span>Open Student Chat App</span>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8 space-y-8">
+
+        <!-- Upload Card -->
+        <section class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="cloud-upload" class="w-5 h-5 text-amber-500"></i>
+                        <span>Upload New Coaching Study Material</span>
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-1">Upload your institute's modules, notes, RTPs, or MTPs. They will be indexed into the cloud database in seconds.</p>
+                </div>
+                <div class="hidden sm:flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full font-semibold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Cloud Vector DB: Active</span>
+                </div>
+            </div>
+
+            <!-- Upload Form -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                
+                <!-- Subject Selection -->
+                <div class="space-y-2">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Select Subject</label>
+                    <select id="subject-select" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 transition">
+                        <option value="CA_Inter_Taxation">CA Inter - Taxation (Direct & GST)</option>
+                        <option value="CA_Inter_Corporate_Law">CA Inter - Corporate & Other Laws</option>
+                        <option value="CA_Inter_Costing">CA Inter - Cost & Management Accounting</option>
+                        <option value="CA_Inter_Auditing">CA Inter - Auditing and Ethics</option>
+                        <option value="CA_Inter_Advanced_Accounts">CA Inter - Advanced Accounting</option>
+                        <option value="CS_Executive_Company_Law">CS Executive - Company Law</option>
+                        <option value="CS_Executive_Jurisprudence">CS Executive - Jurisprudence & General Laws</option>
+                        <option value="CMA_Direct_Tax">CMA - Direct & Indirect Tax</option>
+                        <option value="Custom_Subject">Other / Custom Topic</option>
+                    </select>
+
+                    <div id="custom-subject-box" class="hidden pt-2">
+                        <input type="text" id="custom-subject-input" placeholder="Type custom subject name..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800">
+                    </div>
+                </div>
+
+                <!-- Drag & Drop PDF Zone -->
+                <div class="md:col-span-2 space-y-2">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Choose Coaching PDF File</label>
+                    
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-slate-50/50 hover:bg-amber-50/20 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2" onclick="document.getElementById('pdf-file-input').click()">
+                        <input type="file" id="pdf-file-input" accept=".pdf" class="hidden" onchange="handleFileChosen(event)">
+                        
+                        <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shadow-inner">
+                            <i data-lucide="file-up" class="w-6 h-6"></i>
+                        </div>
+
+                        <div>
+                            <p id="file-display-name" class="text-sm font-bold text-slate-700">Click to browse or drag & drop your PDF here</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Supports PDF documents (e.g. Study Module, RTP, MTP)</p>
+                        </div>
+                    </div>
+
+                    <!-- Upload Action Button -->
+                    <div class="pt-2 flex items-center justify-end">
+                        <button onclick="startUploadToCloud()" id="upload-btn" class="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-bold px-6 py-3 rounded-2xl text-sm shadow-md transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i data-lucide="upload" class="w-4 h-4 text-amber-400"></i>
+                            <span>Upload & Index to Cloud</span>
+                        </button>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- Upload Progress Bar (Hidden by default) -->
+            <div id="progress-box" class="hidden bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span id="progress-status-text" class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span>Extracting pages and generating cloud embeddings...</span>
+                    </span>
+                    <span id="progress-percent" class="text-amber-600">Processing...</span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                    <div id="progress-bar-fill" class="bg-amber-500 h-2.5 rounded-full transition-all duration-300" style="width: 60%"></div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Current Indexed Study Materials Table -->
+        <section class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="library" class="w-5 h-5 text-amber-500"></i>
+                        <span>Current Indexed Coaching Materials in Cloud</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-1">These study materials are searched in real-time whenever students ask questions.</p>
+                </div>
+                <button onclick="loadCatalog()" class="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-semibold p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    <span>Refresh</span>
+                </button>
+            </div>
+
+            <!-- Materials Grid -->
+            <div id="materials-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+        Excel Educational Institute • Cloud Knowledge Base Powered by Pinecone & Google AI
+    </footer>
+
+    <script>
+        let chosenFile = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            loadCatalog();
+
+            // Handle custom subject toggle
+            document.getElementById("subject-select").addEventListener("change", (e) => {
+                const box = document.getElementById("custom-subject-box");
+                if (e.target.value === "Custom_Subject") {
+                    box.classList.remove("hidden");
+                } else {
+                    box.classList.add("hidden");
+                }
+            });
+
+            // Drag and drop events
+            const dropZone = document.getElementById("drop-zone");
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add("border-amber-500", "bg-amber-50/30");
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove("border-amber-500", "bg-amber-50/30");
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.toLowerCase().endsWith(".pdf")) {
+                    chosenFile = files[0];
+                    updateFileLabel(chosenFile.name);
+                } else {
+                    alert("Please drop a valid PDF file.");
+                }
+            });
+        });
+
+        function handleFileChosen(event) {
+            const file = event.target.files[0];
+            if (file) {
+                chosenFile = file;
+                updateFileLabel(file.name);
+            }
+        }
+
+        function updateFileLabel(name) {
+            document.getElementById("file-display-name").innerHTML = `
+                <span class="text-amber-600 font-bold">✓ Selected:</span> ${name}
+            `;
+        }
+
+        async function startUploadToCloud() {
+            if (!chosenFile) {
+                alert("Please select or drop a coaching PDF first.");
+                return;
+            }
+
+            let subject = document.getElementById("subject-select").value;
+            if (subject === "Custom_Subject") {
+                const custom = document.getElementById("custom-subject-input").value.trim();
+                if (!custom) {
+                    alert("Please type the custom subject name.");
+                    return;
+                }
+                subject = custom.replace(/[^a-zA-Z0-9_]/g, "_");
+            }
+
+            const btn = document.getElementById("upload-btn");
+            const progressBox = document.getElementById("progress-box");
+            const statusText = document.getElementById("progress-status-text");
+            const progressBar = document.getElementById("progress-bar-fill");
+
+            btn.disabled = true;
+            progressBox.classList.remove("hidden");
+            statusText.innerText = `Uploading and parsing '${chosenFile.name}'...`;
+            progressBar.style.width = "30%";
+
+            const formData = new FormData();
+            formData.append("file", chosenFile);
+            formData.append("subject", subject);
+
+            try {
+                progressBar.style.width = "65%";
+                statusText.innerText = "Extracting text and generating Google embeddings into Pinecone Cloud...";
+
+                const resp = await fetch("/api/admin/upload-cloud-pdf", {
+                    method: "POST",
+                    body: formData
+                });
+                const result = await resp.json();
+
+                if (result.success) {
+                    progressBar.style.width = "100%";
+                    statusText.innerHTML = `<span class="text-emerald-600 font-bold">✓ Successfully uploaded and indexed into Cloud Database!</span>`;
+                    alert(`Success! Indexed ${result.chunks_count} knowledge sections into Pinecone Cloud.`);
+                    chosenFile = null;
+                    document.getElementById("pdf-file-input").value = "";
+                    document.getElementById("file-display-name").innerText = "Click to browse or drag & drop another PDF";
+                    loadCatalog();
+                } else {
+                    alert("Upload error: " + (result.detail || "Could not process PDF"));
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Upload failed. Please check server connection.");
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => {
+                    progressBox.classList.add("hidden");
+                }, 3000);
+            }
+        }
+
+        async function loadCatalog() {
+            const list = document.getElementById("materials-list");
+            list.innerHTML = `<p class="col-span-full text-center py-6 text-xs text-slate-400">Loading cloud materials...</p>`;
+
+            try {
+                const resp = await fetch("/api/admin/materials");
+                const data = await resp.json();
+
+                if (!data.materials || data.materials.length === 0) {
+                    list.innerHTML = `
+                        <div class="col-span-full text-center py-8 text-slate-400 bg-slate-50 border border-slate-200 rounded-2xl">
+                            <i data-lucide="book-open" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
+                            <p class="text-sm font-medium">No external PDFs uploaded yet.</p>
+                            <p class="text-xs text-slate-400 mt-1">Pre-loaded statutory exam provisions are active in Pinecone Cloud.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                list.innerHTML = data.materials.map(m => `
+                    <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col justify-between hover:shadow-sm transition">
+                        <div>
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <span class="text-[10px] uppercase font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full truncate">
+                                    ${m.subject.replace(/_/g, " ")}
+                                </span>
+                                <span class="text-[10px] text-slate-400">${m.chunks} chunks</span>
+                            </div>
+                            <h4 class="font-bold text-xs text-slate-800 truncate" title="${m.doc_name}">📄 ${m.doc_name}</h4>
+                            <p class="text-[11px] text-slate-500 mt-1">Uploaded: ${new Date(m.uploaded_at).toLocaleDateString()}</p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                            <span class="text-emerald-600 font-semibold text-[11px] flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Active in Cloud</span>
+                            </span>
+                        </div>
+                    </div>
+                `).join("");
+
+                lucide.createIcons();
+
+            } catch (err) {
+                console.error(err);
+                list.innerHTML = `<p class="col-span-full text-center py-6 text-xs text-red-500">Failed to load cloud materials catalog.</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
