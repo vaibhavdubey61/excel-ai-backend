@@ -78,20 +78,20 @@
                     </div>
                 </div>
 
-                <!-- Drag & Drop PDF Zone -->
+                <!-- Drag & Drop PDF or ZIP Zone -->
                 <div class="md:col-span-2 space-y-2">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Choose Coaching PDF File</label>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Choose Coaching PDF or ZIP Archive</label>
                     
                     <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-slate-50/50 hover:bg-amber-50/20 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2" onclick="document.getElementById('pdf-file-input').click()">
-                        <input type="file" id="pdf-file-input" accept=".pdf" class="hidden" onchange="handleFileChosen(event)">
+                        <input type="file" id="pdf-file-input" accept=".pdf,.zip" class="hidden" onchange="handleFileChosen(event)">
                         
                         <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shadow-inner">
-                            <i data-lucide="file-up" class="w-6 h-6"></i>
+                            <i data-lucide="folder-archive" class="w-6 h-6"></i>
                         </div>
 
                         <div>
-                            <p id="file-display-name" class="text-sm font-bold text-slate-700">Click to browse or drag & drop your PDF here</p>
-                            <p class="text-xs text-slate-400 mt-0.5">Supports PDF documents (e.g. Study Module, RTP, MTP)</p>
+                            <p id="file-display-name" class="text-sm font-bold text-slate-700">Click to browse or drag & drop PDF or ZIP here</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Supports single PDF or entire ZIP archive containing all your PDFs</p>
                         </div>
                     </div>
 
@@ -187,11 +187,14 @@
 
             dropZone.addEventListener('drop', (e) => {
                 const files = e.dataTransfer.files;
-                if (files.length > 0 && files[0].name.toLowerCase().endsWith(".pdf")) {
-                    chosenFile = files[0];
-                    updateFileLabel(chosenFile.name);
-                } else {
-                    alert("Please drop a valid PDF file.");
+                if (files.length > 0) {
+                    const name = files[0].name.toLowerCase();
+                    if (name.endsWith(".pdf") || name.endsWith(".zip")) {
+                        chosenFile = files[0];
+                        updateFileLabel(chosenFile.name);
+                    } else {
+                        alert("Please drop a valid PDF or ZIP file.");
+                    }
                 }
             });
         });
@@ -205,8 +208,9 @@
         }
 
         function updateFileLabel(name) {
+            const isZip = name.toLowerCase().endsWith(".zip");
             document.getElementById("file-display-name").innerHTML = `
-                <span class="text-amber-600 font-bold">✓ Selected:</span> ${name}
+                <span class="text-amber-600 font-bold">✓ Selected ${isZip ? '📦 ZIP Archive' : '📄 PDF'}:</span> ${name}
             `;
         }
 

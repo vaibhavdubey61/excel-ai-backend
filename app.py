@@ -123,26 +123,15 @@ async def chat_endpoint(
     return {"reply": reply_text}
 
 
-@app.post("/api/admin/upload-cloud-pdf")
-async def upload_cloud_pdf(
-    file: UploadFile = File(...),
-    subject: str = Form("General")
-):
-    """Admin endpoint: ingests an uploaded coaching PDF directly into Pinecone Cloud."""
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-
-    doc_name = file.filename
-    content_bytes = await file.read()
-
-    import io
-    pdf_stream = io.BytesIO(content_bytes)
+def extract_chunks_from_pdf_stream(pdf_stream, doc_name: str, subject: str) -> (int, List[Dict[str, Any]]):
     reader = pypdf.PdfReader(pdf_stream)
     total_pages = len(reader.pages)
-
     chunks = []
     for page_idx, page in enumerate(reader.pages):
-        text = page.extract_text() or ""
+        try:
+            text = page.extract_text() or ""
+        except Exception:
+            text = ""
         clean_text = re.sub(r'\s+', ' ', text).strip()
         if len(clean_text) < 40:
             continue
@@ -155,7 +144,8 @@ async def upload_cloud_pdf(
         while start < len(words):
             end = min(start + chunk_size, len(words))
             block = " ".join(words[start:end])
-            safe_id = f"{doc_name}_p{page_idx+1}_c{chunk_id}".replace(" ", "_").replace(".", "_")
+            safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', doc_name)
+            safe_id = f"{safe_name}_p{page_idx+1}_c{chunk_id}"
             chunks.append({
                 "id": safe_id,
                 "subject": subject,
@@ -165,19 +155,96 @@ async def upload_cloud_pdf(
             })
             start += chunk_size - overlap
             chunk_id += 1
+    return total_pages, chunks
+
+
+@app.post("/api/admin/upload-cloud-pdf")
+async def upload_cloud_pdf(
+    file: UploadFile = File(...),
+    subject: str = Form("General")
+):
+    """Admin endpoint: ingests an uploaded coaching PDF or ZIP archive of PDFs directly into Pinecone Cloud."""
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".pdf") or filename_lower.endswith(".zip")):
+        raise HTTPException(status_code=400, detail="Only PDF and ZIP files are supported.")
+
+    content_bytes = await file.read()
+    now_ts = int(datetime.now().timestamp())
+    catalog = load_catalog_data()
+
+    # Handle ZIP archive containing multiple PDFs
+    if filename_lower.endswith(".zip"):
+        import zipfile
+        import io
+        zip_stream = io.BytesIO(content_bytes)
+        processed_docs = []
+        total_chunks_added = 0
+
+        with zipfile.ZipFile(zip_stream, 'r') as zf:
+            pdf_names = [n for n in zf.namelist() if n.lower().endswith(".pdf") and not n.startswith("__MACOSX")]
+            if not pdf_names:
+                raise HTTPException(status_code=400, detail="No PDF files found inside the uploaded ZIP archive.")
+
+            for pdf_path in pdf_names:
+                doc_name = os.path.basename(pdf_path)
+                pdf_subject = subject
+                if subject == "General":
+                    p_lower = pdf_path.lower()
+                    if "tax" in p_lower or "gst" in p_lower:
+                        pdf_subject = "CA_Inter_Taxation"
+                    elif "law" in p_lower:
+                        pdf_subject = "CA_Inter_Corporate_Law"
+                    elif "cost" in p_lower:
+                        pdf_subject = "CA_Inter_Costing"
+                    elif "audit" in p_lower:
+                        pdf_subject = "CA_Inter_Auditing"
+                    elif "acc" in p_lower:
+                        pdf_subject = "CA_Inter_Advanced_Accounts"
+
+                try:
+                    p_bytes = zf.read(pdf_path)
+                    stream = io.BytesIO(p_bytes)
+                    total_pages, chunks = extract_chunks_from_pdf_stream(stream, doc_name, pdf_subject)
+                    if chunks:
+                        for i in range(0, len(chunks), 20):
+                            batch = chunks[i:i+20]
+                            await cloud_store.upsert_chunks(batch)
+
+                        catalog.insert(0, {
+                            "id": f"mat_{now_ts}_{len(processed_docs)}",
+                            "doc_name": doc_name,
+                            "subject": pdf_subject,
+                            "pages": total_pages,
+                            "chunks": len(chunks),
+                            "uploaded_at": datetime.now().isoformat()
+                        })
+                        processed_docs.append(doc_name)
+                        total_chunks_added += len(chunks)
+                except Exception as err:
+                    print(f"Error processing {doc_name} from zip: {err}")
+
+        save_catalog_data(catalog)
+        return {
+            "success": True,
+            "message": f"Successfully extracted and indexed {len(processed_docs)} PDFs ({total_chunks_added} chunks) from ZIP archive into Pinecone Cloud!",
+            "pages": len(processed_docs),
+            "chunks_count": total_chunks_added
+        }
+
+    # Handle Single PDF
+    import io
+    doc_name = file.filename
+    pdf_stream = io.BytesIO(content_bytes)
+    total_pages, chunks = extract_chunks_from_pdf_stream(pdf_stream, doc_name, subject)
 
     if not chunks:
         raise HTTPException(status_code=400, detail="Could not extract readable text from this PDF.")
 
-    # Upload to Pinecone Cloud in batches of 20
     batch_size = 20
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i+batch_size]
         await cloud_store.upsert_chunks(batch)
 
-    # Save to catalog
-    now_ts = int(datetime.now().timestamp())
-    catalog = load_catalog_data()
     catalog.insert(0, {
         "id": f"mat_{now_ts}",
         "doc_name": doc_name,
