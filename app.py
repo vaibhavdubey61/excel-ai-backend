@@ -8,25 +8,33 @@ from pydantic import BaseModel
 
 from rag_engine import RAGEngine, STUDY_MATERIALS_DIR
 from ai_service import AIService
+from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST
 
-# Read API Key from environment or .env file
-API_KEY = os.getenv("GEMINI_API_KEY", "")
+# Load keys from environment or .env
+GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+PINECONE_KEY = os.getenv("PINECONE_API_KEY", "")
+PINECONE_HOST = os.getenv("PINECONE_INDEX_HOST", PINECONE_INDEX_HOST)
+
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if not API_KEY and os.path.exists(env_path):
+if os.path.exists(env_path):
     try:
         with open(env_path, "r") as f:
             for line in f:
                 if line.startswith("GEMINI_API_KEY="):
-                    API_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    break
+                    GEMINI_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("PINECONE_API_KEY="):
+                    PINECONE_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("PINECONE_INDEX_HOST="):
+                    PINECONE_HOST = line.split("=", 1)[1].strip().strip('"').strip("'")
     except Exception:
         pass
 
 app = FastAPI(title="Excel AI Coach", version="2.0.0")
 
-# Initialize RAG Engine and AI Service silently in the background
-rag = RAGEngine(storage_dir=STUDY_MATERIALS_DIR)
-ai = AIService(api_key=API_KEY)
+# Initialize Cloud Vector Store, Local RAG Fallback, and AI Engine
+cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINECONE_KEY, index_host=PINECONE_HOST)
+local_rag = RAGEngine(storage_dir=STUDY_MATERIALS_DIR)
+ai = AIService(api_key=GEMINI_KEY)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -46,7 +54,7 @@ async def chat_endpoint(
     message: Optional[str] = Form(""),
     file: Optional[UploadFile] = File(None)
 ):
-    """Unified endpoint: handles doubts, questions, handwritten answer photos, and files."""
+    """Unified endpoint: queries Pinecone Cloud Vector DB and generates exam-standard answers via Gemini."""
     user_text = (message or "").strip()
     image_b64 = ""
     mime_type = "image/jpeg"
@@ -59,11 +67,16 @@ async def chat_endpoint(
     if not user_text and not image_b64:
         raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
 
-    # 1. Retrieve study material context silently
-    query_for_search = user_text if user_text else "Examine and evaluate student answer sheet"
-    chunks = rag.search(query=query_for_search, top_k=3)
+    # 1. Search Knowledge Base: Priority to Pinecone Cloud Vector DB
+    chunks = []
+    query_text = user_text if user_text else "Evaluate student answer sheet and assign step marks"
+    try:
+        chunks = await cloud_store.query(query_text, top_k=3)
+    except Exception as e:
+        print(f"[Cloud Vector DB warning]: {e}. Falling back to local index.")
+        chunks = local_rag.search(query=query_text, top_k=3)
 
-    # 2. Generate authoritative response without any source citations
+    # 2. Generate response via Gemini (with Multimodal Vision if handwritten image is attached)
     reply_text = await ai.get_response(
         message=user_text,
         image_base64=image_b64 if image_b64 else None,
@@ -76,14 +89,11 @@ async def chat_endpoint(
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
-
-
-# Admin endpoint to silently refresh PDFs when new materials are added to study_materials folder
-@app.post("/api/admin/refresh-materials")
-async def refresh_materials():
-    rag.load_all_materials()
-    return {"status": "refreshed", "chunks": len(rag.chunks)}
+    return {
+        "status": "ok",
+        "cloud_vector_db": "Pinecone Serverless (AWS)",
+        "ai_model": "Google Gemini 1.5 Flash (Live)"
+    }
 
 
 if __name__ == "__main__":

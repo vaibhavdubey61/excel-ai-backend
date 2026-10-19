@@ -45,7 +45,7 @@ CRITICAL INSTRUCTIONS:
 class AIService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.model_name = "gemini-1.5-flash"
+        self.model_name = "gemini-flash-latest"
 
     def set_api_key(self, key: str):
         self.api_key = key.strip()
