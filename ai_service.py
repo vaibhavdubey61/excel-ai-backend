@@ -42,10 +42,16 @@ CRITICAL INSTRUCTIONS:
 """
 
 
+CANDIDATE_MODELS = [
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest",
+    "gemini-pro-latest"
+]
+
 class AIService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.model_name = "gemini-flash-latest"
+        self.models = CANDIDATE_MODELS
 
     def set_api_key(self, key: str):
         self.api_key = key.strip()
@@ -73,7 +79,7 @@ class AIService:
 {knowledge_context}
 """
 
-        # 2. Call live Gemini if API key is present
+        # 2. Call live Gemini with multi-model fallback
         if self.has_api_key():
             try:
                 images = []
@@ -84,7 +90,7 @@ class AIService:
                     })
                 return await self._call_gemini_api(prompt, images=images, system_instruction=SYSTEM_PROMPT)
             except Exception as e:
-                print(f"[Gemini API Call Error]: {e}")
+                print(f"[Gemini Multi-Model Fallback Triggered]: {e}")
                 return self._simulate_response(message, bool(image_base64))
         else:
             return self._simulate_response(message, bool(image_base64))
@@ -95,9 +101,7 @@ class AIService:
         images: Optional[List[Dict[str, str]]] = None,
         system_instruction: str = ""
     ) -> str:
-        """Direct async call to Gemini API."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
-
+        """Calls Gemini with rapid fallback across candidate models to avoid 503 capacity limits."""
         parts: List[Dict[str, Any]] = []
         if images:
             for img in images:
@@ -122,15 +126,23 @@ class AIService:
                 "parts": [{"text": system_instruction}]
             }
 
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code != 200:
-                raise Exception(f"Gemini API returned HTTP {resp.status_code}: {resp.text}")
-            result = resp.json()
+        last_error = None
+        for model in self.models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
             try:
-                return result["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError) as err:
-                raise Exception(f"Unexpected response structure: {result}")
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        result = resp.json()
+                        return result["candidates"][0]["content"]["parts"][0]["text"]
+                    else:
+                        last_error = f"Model {model} returned HTTP {resp.status_code}: {resp.text[:100]}"
+                        print(f"[{model} unavailable]: {last_error}")
+            except Exception as err:
+                last_error = f"Model {model} error: {err}"
+                print(f"[{model} failed]: {err}")
+
+        raise Exception(f"All Gemini models exhausted. Last error: {last_error}")
 
     def _simulate_response(self, message: str, has_image: bool) -> str:
         """Intelligent offline fallback response adhering strictly to exam standards."""
@@ -183,6 +195,45 @@ What is the ceiling on the buy-back of equity shares in any financial year under
 *Correct Answer:* **B) 25% of total paid-up equity capital**
 *Reasoning:* While overall buy-back cannot exceed 25% of aggregate paid-up capital and free reserves, the buy-back of equity shares specifically is capped at 25% of total paid-up equity capital in that financial year."""
 
+        # GST / Indirect Tax query
+        if "gst" in msg_lower or "goods and services" in msg_lower:
+            return """### Goods and Services Tax (GST) - Exam Overview
+
+#### 1. Core Statutory Concept
+**Goods and Services Tax (GST)** is a comprehensive, multi-stage, **destination-based consumption tax** levied on the supply of goods and services (or both), enacted via the **101st Constitutional Amendment Act, 2016** and effective from **1st July 2017**.
+
+#### 2. Key Exam Features
+- **Dual GST Model**: India follows a dual structure where both Centre and States levy tax concurrently:
+  - **CGST (Central GST)** & **SGST/UTGST (State/UT GST)** on Intra-State supplies.
+  - **IGST (Integrated GST)** on Inter-State supplies and imports (collected by Centre and apportioned to destination State).
+- **Taxable Event**: The taxable event is **"Supply"** as defined under **Section 7 of the CGST Act, 2017** (replacing manufacture, sale, or provision of services).
+- **Continuous Flow of Credit (ITC)**: Seamless Input Tax Credit under **Section 16** avoids cascading effects of taxes across the supply chain.
+
+#### 3. ICAI Exam Scoring Tips
+In exam problems, always determine:
+1. **Place of Supply** (Section 10/12 for goods, Section 12/13 for services under IGST Act).
+2. **Nature of Supply**: Intra-State (CGST + SGST) vs Inter-State (IGST).
+3. **Value of Supply** under Section 15 of CGST Act before applying applicable rates."""
+
+        # CSR / Corporate Law query
+        if "csr" in msg_lower or "135" in msg_lower:
+            return """### Corporate Social Responsibility (CSR) - Section 135
+
+#### 1. Applicable Statutory Thresholds (Companies Act, 2013)
+Under **Section 135(1)**, every company having:
+- **Net Worth** >= ₹500 Crore, OR
+- **Turnover** >= ₹1,000 Crore, OR
+- **Net Profit** >= ₹5 Crore
+during the immediately preceding financial year must constitute a **CSR Committee** of the Board.
+
+#### 2. Minimum Spend Requirement
+- The Board must ensure the company spends at least **2% of the average net profits** of the company made during the **three immediately preceding financial years**.
+- Activities must conform to **Schedule VII** of the Companies Act, 2013.
+
+#### 3. Treatment of Unspent Amount (Section 135(5) & 135(6))
+- **Ongoing Project**: Transfer to "Unspent CSR Account" within 30 days from end of FY, and spend within 3 financial years.
+- **Other than Ongoing Project**: Transfer to a Fund specified in Schedule VII within 6 months from expiry of FY."""
+
         # Default query: Section 115BAC or general doubt
         if "115bac" in msg_lower or "tax" in msg_lower or "slab" in msg_lower:
             return """### Section 115BAC: Default Tax Regime
@@ -207,17 +258,15 @@ Under **Section 115BAC** of the Income Tax Act, 1961, the concessional tax regim
 In computation questions, always compute tax liability under both the Default Regime (Sec 115BAC) and the Normal Provisions (Old Regime), and advise the assessee on which option minimizes total tax payable."""
 
         # General doubt fallback
-        return f"""### Exam Analysis & Solution
+        topic = message.strip() if message else "Commerce Exam Concepts"
+        return f"""### Exam Analysis: {topic}
 
-#### 1. Relevant Statutory Provisions & Standards
-For this topic in the syllabus:
-- Identify the governing Act, Section number, or Accounting Standard (e.g. Companies Act 2013, Income Tax Act 1961, or relevant SA/Ind AS).
-- Clearly define all statutory conditions, thresholds, and applicability criteria.
+#### 1. Key Conceptual Framework
+In professional commerce examinations (CA, CS, CMA), questions regarding **{topic}** require precision:
+- **Statutory Foundation**: Reference the governing Act, applicable Section, or relevant Accounting Standard/Ind AS.
+- **Scope & Definitions**: Clearly specify definitions, statutory thresholds, and mandatory compliance requirements.
 
-#### 2. Application & Step-by-Step Breakdown
-- Present all calculations in structured tabular format.
-- Number all **Working Notes** consecutively, as examiners assign step marks for intermediate figures.
-
-#### 3. Conclusion & Exam Strategy
-- Conclude with a clear legal decision or reconciliation statement.
-- Maintain professional terminology and precise legal phrasing to ensure maximum score."""
+#### 2. Presentation Guidelines for Maximum Score
+- **Calculations**: Present numerical steps in neat tabular format with numbered **Working Notes**.
+- **Case Law & Precedents**: When analyzing legal problems, follow the **Issue - Provision - Explanation - Conclusion** structure.
+- **Examiner's Note**: Ensure exact statutory terminology is used to secure full step marks."""

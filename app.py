@@ -2,6 +2,7 @@ import os
 import re
 import json
 import base64
+import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -91,24 +92,27 @@ async def chat_endpoint(
     image_b64 = ""
     mime_type = "image/jpeg"
 
-    if file and file.filename:
-        content_bytes = await file.read()
-        mime_type = file.content_type or "image/jpeg"
-        image_b64 = base64.b64encode(content_bytes).decode("utf-8")
+    # Safely handle optional file without AttributeError
+    if file is not None and getattr(file, "filename", None):
+        try:
+            content_bytes = await file.read()
+            mime_type = file.content_type or "image/jpeg"
+            image_b64 = base64.b64encode(content_bytes).decode("utf-8")
+        except Exception as e:
+            print(f"[File reading error]: {e}")
 
     if not user_text and not image_b64:
         raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
 
-    # 1. Search Knowledge Base: Priority to Pinecone Cloud Vector DB
+    # 1. Search Knowledge Base: Priority to Pinecone Cloud Vector DB with 4.5s timeout to prevent lag
     chunks = []
     query_text = user_text if user_text else "Evaluate student answer sheet and assign step marks"
     try:
-        chunks = await cloud_store.query(query_text, top_k=3)
+        chunks = await asyncio.wait_for(cloud_store.query(query_text, top_k=3), timeout=4.5)
     except Exception as e:
-        print(f"[Cloud Vector DB warning]: {e}. Falling back to local index.")
-        chunks = local_rag.search(query=query_text, top_k=3)
+        print(f"[Vector DB notice]: {e}. Proceeding directly to AI.")
 
-    # 2. Generate response via Gemini (with Multimodal Vision if handwritten image is attached)
+    # 2. Generate response via Gemini (with multi-model fallback and Multimodal Vision)
     reply_text = await ai.get_response(
         message=user_text,
         image_base64=image_b64 if image_b64 else None,
