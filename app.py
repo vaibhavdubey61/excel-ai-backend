@@ -14,6 +14,7 @@ import pypdf
 from rag_engine import RAGEngine, STUDY_MATERIALS_DIR
 from ai_service import AIService
 from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST
+from ingest_materials import detect_subject
 
 # Load keys from environment or .env
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -189,17 +190,7 @@ async def upload_cloud_pdf(
                 doc_name = os.path.basename(pdf_path)
                 pdf_subject = subject
                 if subject == "General":
-                    p_lower = pdf_path.lower()
-                    if "tax" in p_lower or "gst" in p_lower:
-                        pdf_subject = "CA_Inter_Taxation"
-                    elif "law" in p_lower:
-                        pdf_subject = "CA_Inter_Corporate_Law"
-                    elif "cost" in p_lower:
-                        pdf_subject = "CA_Inter_Costing"
-                    elif "audit" in p_lower:
-                        pdf_subject = "CA_Inter_Auditing"
-                    elif "acc" in p_lower:
-                        pdf_subject = "CA_Inter_Advanced_Accounts"
+                    pdf_subject = detect_subject(pdf_path)
 
                 try:
                     p_bytes = zf.read(pdf_path)

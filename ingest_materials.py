@@ -38,36 +38,43 @@ cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINEC
 CATALOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_catalog.json")
 
 def detect_subject(file_path: str) -> str:
-    """Infers subject name from directory hierarchy or filename."""
-    path_lower = file_path.lower().replace("\\", "/")
+    """Infers subject name from directory hierarchy or filename for Foundation, Inter & Final."""
+    p = file_path.lower().replace(chr(92), "/")
     
-    # Check parent directory names
-    parts = [p.strip() for p in path_lower.split("/") if p.strip()]
-    for part in parts[:-1]:
-        if "tax" in part or "gst" in part:
-            return "CA_Inter_Taxation"
-        if "law" in part or "corp" in part:
-            return "CA_Inter_Corporate_Law"
-        if "cost" in part or "cma" in part:
-            return "CA_Inter_Costing"
-        if "audit" in part:
-            return "CA_Inter_Auditing"
-        if "acc" in part:
-            return "CA_Inter_Advanced_Accounts"
-            
-    # Check filename
-    filename = os.path.basename(path_lower)
-    if "tax" in filename or "gst" in filename:
+    # 1. Economics
+    if "economics" in p or "eco" in p:
+        return "CA_Foundation_Business_Economics"
+    
+    # 2. Maths / Quantitative Aptitude
+    if "quantitative" in p or "aptitude" in p or "maths" in p or "math" in p:
+        return "CA_Foundation_Quantitative_Aptitude"
+    
+    # 3. Business Laws
+    if "business law" in p or "businesslaws" in p or "bus.law" in p:
+        return "CA_Foundation_Business_Laws"
+    
+    # 4. Tax / GST (Inter)
+    if "tax" in p or "gst" in p:
         return "CA_Inter_Taxation"
-    if "law" in filename or "company" in filename:
-        return "CA_Inter_Corporate_Law"
-    if "cost" in filename:
-        return "CA_Inter_Costing"
-    if "audit" in filename:
+    
+    # 5. Audit (Inter)
+    if "audit" in p:
         return "CA_Inter_Auditing"
-    if "acc" in filename:
-        return "CA_Inter_Advanced_Accounts"
-        
+    
+    # 6. Costing (Inter)
+    if "cost" in p or "cma" in p:
+        return "CA_Inter_Costing"
+    
+    # 7. Corporate Law (Inter)
+    if "corporate law" in p or "corp" in p or "company law" in p:
+        return "CA_Inter_Corporate_Law"
+    
+    # 8. Accounts (Foundation vs Inter)
+    if "account" in p or "acc" in p:
+        if "inter" in p or "advanced" in p:
+            return "CA_Inter_Advanced_Accounts"
+        return "CA_Foundation_Accounting"
+
     return "General_Study_Material"
 
 def extract_chunks_from_pdf_stream(pdf_stream, doc_name: str, subject: str) -> (int, List[Dict[str, Any]]):
@@ -130,80 +137,106 @@ async def process_pdf(doc_name: str, pdf_bytes: bytes, subject: str) -> Dict[str
         "status": "success"
     }
 
-async def ingest_zip_archive(zip_path: str):
-    if not os.path.exists(zip_path):
-        print(f"[Error]: File not found: {zip_path}")
+async def ingest_source(target_path: str):
+    if not os.path.exists(target_path):
+        print(f"[Error]: File or folder not found: {target_path}")
         return
 
     print("=" * 65)
     print("   EXCEL AI - BATCH STUDY MATERIALS INGESTER")
     print("=" * 65)
-    print(f"Reading archive: {zip_path}")
+    print(f"Source: {target_path}")
+
+    docs_to_process = []
+    zf_ref = None
+
+    if os.path.isdir(target_path):
+        for root, dirs, files in os.walk(target_path):
+            for f in files:
+                if f.lower().endswith(".pdf") and not f.startswith("~$") and not f.startswith("."):
+                    full_p = os.path.join(root, f)
+                    def make_reader(p=full_p):
+                        with open(p, "rb") as fh:
+                            return fh.read()
+                    docs_to_process.append((f, full_p, make_reader))
+    elif zipfile.is_zipfile(target_path):
+        zf_ref = zipfile.ZipFile(target_path, 'r')
+        for n in zf_ref.namelist():
+            if n.lower().endswith(".pdf") and not n.startswith("__MACOSX") and not os.path.basename(n).startswith("~$") and not os.path.basename(n).startswith("."):
+                doc_name = os.path.basename(n)
+                def make_reader(entry_name=n):
+                    return zf_ref.read(entry_name)
+                docs_to_process.append((doc_name, n, make_reader))
+    elif target_path.lower().endswith(".pdf"):
+        full_p = os.path.abspath(target_path)
+        doc_name = os.path.basename(full_p)
+        docs_to_process.append((doc_name, full_p, lambda: open(full_p, "rb").read()))
+
+    if not docs_to_process:
+        print("[Warning]: No PDF files found to ingest.")
+        return
+
+    print(f"Found {len(docs_to_process)} PDF documents to ingest.\n")
     
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        namelist = [n for n in zf.namelist() if n.lower().endswith(".pdf") and not n.startswith("__MACOSX")]
-        
-        if not namelist:
-            print("[Warning]: No PDF files found inside the ZIP archive.")
-            return
-            
-        print(f"Found {len(namelist)} PDF documents inside archive.\n")
-        
-        catalog = []
-        if os.path.exists(CATALOG_FILE):
-            try:
-                with open(CATALOG_FILE, "r") as f:
-                    catalog = json.load(f)
-            except Exception:
-                catalog = []
-                
-        total_chunks = 0
-        success_count = 0
-        
-        for idx, pdf_name in enumerate(namelist, 1):
-            doc_basename = os.path.basename(pdf_name)
-            subject = detect_subject(pdf_name)
-            print(f"[{idx}/{len(namelist)}] Ingesting '{doc_basename}' -> Subject: {subject}...")
-            
-            try:
-                pdf_bytes = zf.read(pdf_name)
-                res = await process_pdf(doc_basename, pdf_bytes, subject)
-                
-                if res.get("status") == "success":
-                    success_count += 1
-                    chunks_added = res.get("chunks", 0)
-                    total_chunks += chunks_added
-                    print(f"       -> Indexed {res.get('pages')} pages, {chunks_added} chunks into Pinecone Cloud [OK]")
-                    catalog.insert(0, res)
-                else:
-                    print(f"       -> Skipped (could not extract text / image-only scan)")
-            except Exception as e:
-                print(f"       -> Error indexing '{doc_basename}': {e}")
-                
-        # Save updated catalog
+    catalog = []
+    if os.path.exists(CATALOG_FILE):
         try:
-            with open(CATALOG_FILE, "w") as f:
-                json.dump(catalog, f, indent=2)
-        except Exception as e:
-            print(f"[Error saving catalog]: {e}")
+            with open(CATALOG_FILE, "r") as f:
+                catalog = json.load(f)
+        except Exception:
+            catalog = []
             
+    total_chunks = 0
+    success_count = 0
+    
+    for idx, (doc_name, ref_path, reader_fn) in enumerate(docs_to_process, 1):
+        subject = detect_subject(ref_path)
+        print(f"[{idx}/{len(docs_to_process)}] Ingesting '{doc_name}' -> Subject: {subject}...")
+        
+        try:
+            pdf_bytes = reader_fn()
+            res = await process_pdf(doc_name, pdf_bytes, subject)
+            
+            if res.get("status") == "success":
+                success_count += 1
+                chunks_added = res.get("chunks", 0)
+                total_chunks += chunks_added
+                print(f"       -> Indexed {res.get('pages')} pages, {chunks_added} chunks into Pinecone Cloud [OK]")
+                catalog.insert(0, res)
+            else:
+                print(f"       -> Skipped (could not extract text / image-only scan)")
+        except Exception as e:
+            print(f"       -> Error indexing '{doc_name}': {e}")
+            
+    if zf_ref:
+        zf_ref.close()
+
+    # Save updated catalog
+    try:
+        with open(CATALOG_FILE, "w") as f:
+            json.dump(catalog, f, indent=2)
+    except Exception as e:
+        print(f"[Error saving catalog]: {e}")
+        
     print("\n" + "=" * 65)
     print(f" COMPLETED BATCH INGESTION!")
-    print(f" - Successfully indexed: {success_count} / {len(namelist)} PDFs")
+    print(f" - Successfully indexed: {success_count} / {len(docs_to_process)} PDFs")
     print(f" - Total exam chunks stored in Pinecone Cloud: {total_chunks}")
     print(f" - Vector Database: Active and live for student queries")
     print("=" * 65)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        target_zip = sys.argv[1].strip('"').strip("'")
+        target = sys.argv[1].strip('"').strip("'")
+    elif os.path.exists("study_materials"):
+        target = "study_materials"
     else:
         print("\n=======================================================")
         print("   EXCEL AI STUDY MATERIALS BATCH UPLOADER")
         print("=======================================================")
-        target_zip = input("\nEnter the path to your .zip file (or drag & drop here): ").strip().strip('"').strip("'")
+        target = input("\nEnter path to ZIP or folder (e.g. study_materials): ").strip().strip('"').strip("'")
 
-    if target_zip:
-        asyncio.run(ingest_zip_archive(target_zip))
+    if target:
+        asyncio.run(ingest_source(target))
     else:
-        print("No zip file provided. Exiting.")
+        print("No target provided. Exiting.")
