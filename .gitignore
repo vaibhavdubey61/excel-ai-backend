@@ -6,3 +6,5 @@ __pycache__/
 node_modules/
 excel-ai-mobile/node_modules/
 excel-ai-mobile/.expo/
+study_materials/
+*.exe

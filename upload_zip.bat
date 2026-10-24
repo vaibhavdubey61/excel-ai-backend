@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 title Excel AI - Batch Study Material Ingester
 cd /d "%~dp0"
 set "PYTHONIOENCODING=utf-8"
@@ -6,19 +7,23 @@ set "PYTHONIOENCODING=utf-8"
 echo =====================================================================
 echo    EXCEL AI - 1-CLICK STUDY MATERIALS BATCH INGESTER
 echo =====================================================================
-echo    This tool unpacks your ZIP file, extracts all coaching PDFs,
-echo    generates AI vector embeddings, and stores them in Pinecone Cloud.
+echo    Extracts PDFs, generates AI embeddings, and indexes to Pinecone.
 echo =====================================================================
 echo.
 
-if "%~1"=="" (
-    echo Drag and drop your .zip file onto this window and press Enter:
-    set /p "ZIP_PATH=ZIP file path: "
+if not "%~1"=="" (
+    python ingest_materials.py "%~1"
 ) else (
-    set "ZIP_PATH=%~1"
+    echo [1] Press ENTER to ingest all PDFs in "study_materials\" folder
+    echo [2] Or drag and drop any .ZIP file or PDF folder here and press Enter:
+    set "TARGET_PATH="
+    set /p "TARGET_PATH=Choice / Path: "
+    if "!TARGET_PATH!"=="" (
+        python ingest_materials.py "study_materials"
+    ) else (
+        python ingest_materials.py "!TARGET_PATH!"
+    )
 )
-
-python ingest_materials.py "%ZIP_PATH%"
 
 echo.
 echo Press any key to exit...
