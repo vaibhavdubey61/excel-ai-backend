@@ -1,7 +1,9 @@
 @echo off
 title Excel AI Mobile App (Expo Go)
 cd /d "%~dp0excel-ai-mobile"
-set "PATH=C:\Users\lenovo\AppData\Local\Programs\node-lts;%PATH%"
+if exist "C:\Users\lenovo\AppData\Local\Programs\node-lts" (
+    set "PATH=C:\Users\lenovo\AppData\Local\Programs\node-lts;%PATH%"
+)
 echo =====================================================================
 echo    EXCEL AI MOBILE APP - EXCEL EDUCATIONAL INSTITUTE
 echo =====================================================================
