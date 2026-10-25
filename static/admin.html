@@ -28,6 +28,10 @@
             </div>
 
             <div class="flex items-center gap-3">
+                <button onclick="sessionStorage.removeItem('admin_key'); location.reload();" class="text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-xl border border-slate-700 transition flex items-center gap-1.5">
+                    <i data-lucide="lock" class="w-4 h-4 text-amber-400"></i>
+                    <span>Lock Portal</span>
+                </button>
                 <a href="/" class="text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-xl border border-slate-700 transition flex items-center gap-1.5">
                     <i data-lucide="message-square" class="w-4 h-4 text-amber-400"></i>
                     <span>Open Student Chat App</span>
@@ -37,7 +41,30 @@
     </header>
 
     <!-- Main Container -->
-    <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8 space-y-8">
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8 space-y-6">
+
+        <!-- Admin Navigation Tabs -->
+        <div class="flex items-center gap-2 border-b border-slate-200 pb-3">
+            <button onclick="switchAdminTab('materials')" id="tab-btn-materials" class="px-4 py-2.5 rounded-2xl text-xs font-bold bg-slate-900 text-white shadow-sm transition flex items-center gap-2 cursor-pointer">
+                <i data-lucide="book-open" class="w-4 h-4 text-amber-400"></i>
+                <span>Study Materials & Uploads</span>
+            </button>
+            <button onclick="switchAdminTab('insights')" id="tab-btn-insights" class="px-4 py-2.5 rounded-2xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-2 cursor-pointer">
+                <i data-lucide="bar-chart-3" class="w-4 h-4 text-amber-500"></i>
+                <span>Admin Insights & Chat Logs</span>
+            </button>
+        </div>
+
+        <!-- TAB 1: Study Materials & Uploads -->
+        <div id="tab-content-materials" class="space-y-6">
+
+            <!-- Deprecation / Migration Banner -->
+        <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3">
+            <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 shrink-0 mt-0.5"></i>
+            <div class="text-xs text-amber-900 leading-relaxed">
+                <span class="font-bold">Important Namespace Notice:</span> Existing vectors in the default namespace are deprecated and will not be used in student chat retrieval. Faculty and coaches must re-upload study materials with <strong>Course</strong> and <strong>Level</strong> selected to index them into course-specific namespaces (e.g. <code>ca-foundation</code>, <code>ca-inter</code>, <code>ca-final</code>).
+            </div>
+        </div>
 
         <!-- Upload Card -->
         <section class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
@@ -45,9 +72,9 @@
                 <div>
                     <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
                         <i data-lucide="cloud-upload" class="w-5 h-5 text-amber-500"></i>
-                        <span>Upload New Coaching Study Material</span>
+                        <span>Upload Coaching Study Material</span>
                     </h2>
-                    <p class="text-xs text-slate-500 mt-1">Upload your institute's modules, notes, RTPs, or MTPs. They will be indexed into the cloud database in seconds.</p>
+                    <p class="text-xs text-slate-500 mt-1">Upload modules, RTPs, MTPs or notes. They are parsed, embedded with Google Gemini, and indexed into Pinecone namespaces in the background.</p>
                 </div>
                 <div class="hidden sm:flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full font-semibold">
                     <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -55,32 +82,51 @@
                 </div>
             </div>
 
-            <!-- Upload Form -->
+            <!-- Upload Form with Cascading Course/Level/Subject -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                 
-                <!-- Subject Selection -->
-                <div class="space-y-2">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Select Subject</label>
-                    <select id="subject-select" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 transition">
-                        <option value="CA_Inter_Taxation">CA Inter - Taxation (Direct & GST)</option>
-                        <option value="CA_Inter_Corporate_Law">CA Inter - Corporate & Other Laws</option>
-                        <option value="CA_Inter_Costing">CA Inter - Cost & Management Accounting</option>
-                        <option value="CA_Inter_Auditing">CA Inter - Auditing and Ethics</option>
-                        <option value="CA_Inter_Advanced_Accounts">CA Inter - Advanced Accounting</option>
-                        <option value="CS_Executive_Company_Law">CS Executive - Company Law</option>
-                        <option value="CS_Executive_Jurisprudence">CS Executive - Jurisprudence & General Laws</option>
-                        <option value="CMA_Direct_Tax">CMA - Direct & Indirect Tax</option>
-                        <option value="Custom_Subject">Other / Custom Topic</option>
-                    </select>
+                <!-- Metadata Selectors Column -->
+                <div class="space-y-4">
+                    <!-- Course -->
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">1. Course <span class="text-red-500">*</span></label>
+                        <select id="course-select" onchange="onCourseChanged()" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 transition">
+                            <option value="">-- Choose Course --</option>
+                            <option value="CA">CA (Chartered Accountancy)</option>
+                            <option value="CS">CS (Company Secretary)</option>
+                            <option value="CMA">CMA (Cost & Management)</option>
+                        </select>
+                    </div>
 
-                    <div id="custom-subject-box" class="hidden pt-2">
+                    <!-- Level -->
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">2. Level <span class="text-red-500">*</span></label>
+                        <select id="level-select" onchange="onLevelChanged()" disabled class="w-full bg-slate-100 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 transition disabled:opacity-50">
+                            <option value="">-- Select Course First --</option>
+                        </select>
+                    </div>
+
+                    <!-- Subject -->
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">3. Subject / Paper <span class="text-red-500">*</span></label>
+                        <select id="subject-select" onchange="onSubjectChanged()" disabled class="w-full bg-slate-100 border border-slate-200 rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 transition disabled:opacity-50">
+                            <option value="">-- Select Level First --</option>
+                        </select>
+                    </div>
+
+                    <div id="custom-subject-box" class="hidden pt-1">
                         <input type="text" id="custom-subject-input" placeholder="Type custom subject name..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800">
+                    </div>
+
+                    <div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 flex items-center justify-between">
+                        <span>Target Namespace:</span>
+                        <span id="target-namespace-badge" class="font-mono font-bold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded">none</span>
                     </div>
                 </div>
 
                 <!-- Drag & Drop PDF or ZIP Zone -->
-                <div class="md:col-span-2 space-y-2">
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Choose Coaching PDF or ZIP Archive</label>
+                <div class="md:col-span-2 space-y-3">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">4. Choose Coaching PDF or ZIP Archive</label>
                     
                     <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-slate-50/50 hover:bg-amber-50/20 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2" onclick="document.getElementById('pdf-file-input').click()">
                         <input type="file" id="pdf-file-input" accept=".pdf,.zip" class="hidden" onchange="handleFileChosen(event)">
@@ -91,7 +137,7 @@
 
                         <div>
                             <p id="file-display-name" class="text-sm font-bold text-slate-700">Click to browse or drag & drop PDF or ZIP here</p>
-                            <p class="text-xs text-slate-400 mt-0.5">Supports single PDF or entire ZIP archive containing all your PDFs</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Supports single PDF or entire ZIP archive. Selected Course & Level will apply to all PDFs in the ZIP.</p>
                         </div>
                     </div>
 
@@ -117,7 +163,7 @@
                     <span id="progress-percent" class="text-amber-600">Processing...</span>
                 </div>
                 <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                    <div id="progress-bar-fill" class="bg-amber-500 h-2.5 rounded-full transition-all duration-300" style="width: 60%"></div>
+                    <div id="progress-bar-fill" class="bg-amber-500 h-2.5 rounded-full transition-all duration-300" style="width: 10%"></div>
                 </div>
             </div>
 
@@ -131,7 +177,7 @@
                         <i data-lucide="library" class="w-5 h-5 text-amber-500"></i>
                         <span>Current Indexed Coaching Materials in Cloud</span>
                     </h3>
-                    <p class="text-xs text-slate-500 mt-1">These study materials are searched in real-time whenever students ask questions.</p>
+                    <p class="text-xs text-slate-500 mt-1">Study materials partitioned by Course & Level namespaces for isolated and accurate RAG search.</p>
                 </div>
                 <button onclick="loadCatalog()" class="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-semibold p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition">
                     <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
@@ -145,6 +191,156 @@
             </div>
         </section>
 
+        </div>
+
+        <!-- TAB 2: Admin Insights & Chat Logs -->
+        <div id="tab-content-insights" class="hidden space-y-6">
+            
+            <!-- Stat Cards Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Stat 1: Total Queries -->
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Total Inquiries</span>
+                        <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <i data-lucide="message-square" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                    <h3 id="stat-total-chats" class="text-2xl font-black text-slate-900">0</h3>
+                    <p class="text-[11px] text-slate-400">Total student doubt turns logged</p>
+                </div>
+
+                <!-- Stat 2: Material Grounded % -->
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Material Grounded</span>
+                        <div class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <i data-lucide="book-check" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <h3 id="stat-material-pct" class="text-2xl font-black text-emerald-600">0%</h3>
+                        <span id="stat-general-pct" class="text-xs text-slate-400 font-medium">(0% General)</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Answers verified directly from coaching material</p>
+                </div>
+
+                <!-- Stat 3: Avg Response Latency -->
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Avg Latency</span>
+                        <div class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                            <i data-lucide="clock" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                    <h3 id="stat-avg-latency" class="text-2xl font-black text-slate-900">0 ms</h3>
+                    <p class="text-[11px] text-slate-400">End-to-end AI coach inference time</p>
+                </div>
+
+                <!-- Stat 4: Retrieval Success Rate -->
+                <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Vector Retrieval OK</span>
+                        <div class="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                            <i data-lucide="database" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                    <h3 id="stat-retrieval-rate" class="text-2xl font-black text-purple-600">0%</h3>
+                    <p class="text-[11px] text-slate-400">Pinecone query success rate without timeouts</p>
+                </div>
+            </div>
+
+            <!-- Filters & Actions Bar -->
+            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 flex-wrap">
+                    
+                    <!-- Filter Dropdowns -->
+                    <div class="flex items-center gap-2 flex-wrap flex-1">
+                        <!-- Course Filter -->
+                        <select id="filter-log-course" onchange="renderInsightsTable()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none">
+                            <option value="">All Courses</option>
+                            <option value="CA">CA</option>
+                            <option value="CS">CS</option>
+                            <option value="CMA">CMA</option>
+                        </select>
+
+                        <!-- Level Filter -->
+                        <select id="filter-log-level" onchange="renderInsightsTable()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none">
+                            <option value="">All Levels</option>
+                            <option value="Foundation">Foundation</option>
+                            <option value="Inter">Intermediate</option>
+                            <option value="Final">Final</option>
+                            <option value="Executive">Executive</option>
+                            <option value="Professional">Professional</option>
+                        </select>
+
+                        <!-- Source Filter -->
+                        <select id="filter-log-source" onchange="renderInsightsTable()" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none">
+                            <option value="">All Sources</option>
+                            <option value="material">From Material</option>
+                            <option value="general">General Knowledge</option>
+                        </select>
+
+                        <!-- Low Score Filter Toggle (Score < MIN_SCORE) -->
+                        <button onclick="toggleLowScoreFilter()" id="btn-low-score-filter" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition flex items-center gap-1.5 cursor-pointer" title="Filter queries where material score is below threshold (missing syllabus content)">
+                            <i data-lucide="alert-circle" class="w-3.5 h-3.5 text-amber-500"></i>
+                            <span>Low Score (< 0.62)</span>
+                        </button>
+                    </div>
+
+                    <!-- Right Actions: Refresh and CSV Export -->
+                    <div class="flex items-center gap-2">
+                        <button onclick="loadInsights()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                            <span>Refresh</span>
+                        </button>
+                        <button onclick="exportChatLogs()" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                            <span>Export CSV</span>
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Chat Logs Table Card -->
+            <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                        <i data-lucide="history" class="w-4 h-4 text-amber-500"></i>
+                        <span>Recent Chat Inquiries & Grounding Telemetry</span>
+                    </h3>
+                    <span id="logs-count-badge" class="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                        Showing 0 logs
+                    </span>
+                </div>
+
+                <!-- Table Viewport -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs text-slate-700">
+                        <thead class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
+                            <tr>
+                                <th class="px-3 py-3">Time</th>
+                                <th class="px-3 py-3">Track</th>
+                                <th class="px-4 py-3">Student Doubt</th>
+                                <th class="px-4 py-3">Answer Preview</th>
+                                <th class="px-3 py-3">Source</th>
+                                <th class="px-3 py-3">Top Score</th>
+                                <th class="px-3 py-3">Latency</th>
+                                <th class="px-3 py-3">Model</th>
+                            </tr>
+                        </thead>
+                        <tbody id="insights-table-body" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="8" class="text-center py-8 text-slate-400">Loading insights telemetry...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
     </main>
 
     <!-- Footer -->
@@ -154,20 +350,141 @@
 
     <script>
         let chosenFile = null;
+        let SYLLABUS_MAP = {};
 
-        document.addEventListener("DOMContentLoaded", () => {
-            lucide.createIcons();
-            loadCatalog();
-
-            // Handle custom subject toggle
-            document.getElementById("subject-select").addEventListener("change", (e) => {
-                const box = document.getElementById("custom-subject-box");
-                if (e.target.value === "Custom_Subject") {
-                    box.classList.remove("hidden");
-                } else {
-                    box.classList.add("hidden");
+        function getAdminKey(forcePrompt = false) {
+            let key = sessionStorage.getItem("admin_key");
+            if (!key || forcePrompt) {
+                key = prompt("Enter Admin Password to manage materials:");
+                if (key) {
+                    key = key.trim();
+                    sessionStorage.setItem("admin_key", key);
                 }
+            }
+            return key ? key.trim() : "";
+        }
+
+        async function fetchSyllabus() {
+            try {
+                const resp = await fetch("/api/syllabus");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    SYLLABUS_MAP = data.syllabus || {};
+                }
+            } catch (e) {
+                console.error("Could not fetch syllabus:", e);
+            }
+        }
+
+        function getNamespace(course, level) {
+            if (!course || !level) return "none";
+            const c = course.trim().toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
+            const l = level.trim().toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
+            return `${c}-${l}`;
+        }
+
+        function onCourseChanged() {
+            const courseSelect = document.getElementById("course-select");
+            const levelSelect = document.getElementById("level-select");
+            const subjectSelect = document.getElementById("subject-select");
+            const nsBadge = document.getElementById("target-namespace-badge");
+
+            const selectedCourse = courseSelect.value;
+            levelSelect.innerHTML = `<option value="">-- Choose Level --</option>`;
+            subjectSelect.innerHTML = `<option value="">-- Select Level First --</option>`;
+            subjectSelect.disabled = true;
+            document.getElementById("custom-subject-box").classList.add("hidden");
+
+            if (!selectedCourse || !SYLLABUS_MAP[selectedCourse]) {
+                levelSelect.disabled = true;
+                nsBadge.innerText = "none";
+                return;
+            }
+
+            const levels = Object.keys(SYLLABUS_MAP[selectedCourse]);
+            levels.forEach(lvl => {
+                const opt = document.createElement("option");
+                opt.value = lvl;
+                opt.innerText = `${selectedCourse} ${lvl}`;
+                levelSelect.appendChild(opt);
             });
+
+            levelSelect.disabled = false;
+            levelSelect.classList.remove("bg-slate-100");
+            levelSelect.classList.add("bg-slate-50");
+            nsBadge.innerText = "none";
+        }
+
+        function onLevelChanged() {
+            const courseSelect = document.getElementById("course-select");
+            const levelSelect = document.getElementById("level-select");
+            const subjectSelect = document.getElementById("subject-select");
+            const nsBadge = document.getElementById("target-namespace-badge");
+
+            const course = courseSelect.value;
+            const level = levelSelect.value;
+
+            subjectSelect.innerHTML = `<option value="">-- Select Subject / Paper --</option>`;
+            document.getElementById("custom-subject-box").classList.add("hidden");
+
+            if (!course || !level || !SYLLABUS_MAP[course] || !SYLLABUS_MAP[course][level]) {
+                subjectSelect.disabled = true;
+                nsBadge.innerText = "none";
+                return;
+            }
+
+            const subjects = SYLLABUS_MAP[course][level] || [];
+            subjects.forEach(sub => {
+                const opt = document.createElement("option");
+                opt.value = sub;
+                opt.innerText = sub;
+                subjectSelect.appendChild(opt);
+            });
+
+            const customOpt = document.createElement("option");
+            customOpt.value = "Custom_Subject";
+            customOpt.innerText = "Other / Custom Topic";
+            subjectSelect.appendChild(customOpt);
+
+            subjectSelect.disabled = false;
+            subjectSelect.classList.remove("bg-slate-100");
+            subjectSelect.classList.add("bg-slate-50");
+
+            nsBadge.innerText = getNamespace(course, level);
+        }
+
+        function onSubjectChanged() {
+            const sub = document.getElementById("subject-select").value;
+            const box = document.getElementById("custom-subject-box");
+            if (sub === "Custom_Subject") {
+                box.classList.remove("hidden");
+            } else {
+                box.classList.add("hidden");
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            lucide.createIcons();
+            await fetchSyllabus();
+
+            // Check admin auth immediately on load
+            const key = getAdminKey();
+            if (key) {
+                loadCatalog();
+            } else {
+                const list = document.getElementById("materials-list");
+                list.innerHTML = `
+                    <div class="col-span-full text-center py-8 text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <i data-lucide="lock" class="w-8 h-8 mx-auto mb-2 text-amber-500"></i>
+                        <p class="text-sm font-semibold">Admin Authentication Required</p>
+                        <p class="text-xs text-slate-400 mt-1 mb-3">Please enter the institute admin key to manage materials.</p>
+                        <button onclick="getAdminKey(true); loadCatalog();" class="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 px-4 py-2 rounded-xl transition shadow-sm">
+                            Enter Password
+                        </button>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
 
             // Drag and drop events
             const dropZone = document.getElementById("drop-zone");
@@ -215,107 +532,247 @@
         }
 
         async function startUploadToCloud() {
-            if (!chosenFile) {
-                alert("Please select or drop a coaching PDF first.");
+            const adminKey = getAdminKey();
+            if (!adminKey) {
+                alert("Admin password is required to upload study materials.");
+                return;
+            }
+
+            const course = document.getElementById("course-select").value;
+            const level = document.getElementById("level-select").value;
+            if (!course || !level) {
+                alert("Please select both Course and Level before uploading.");
                 return;
             }
 
             let subject = document.getElementById("subject-select").value;
+            if (!subject) {
+                alert("Please select a Subject or Paper.");
+                return;
+            }
             if (subject === "Custom_Subject") {
                 const custom = document.getElementById("custom-subject-input").value.trim();
                 if (!custom) {
-                    alert("Please type the custom subject name.");
+                    alert("Please enter the custom subject name.");
                     return;
                 }
-                subject = custom.replace(/[^a-zA-Z0-9_]/g, "_");
+                subject = custom;
+            }
+
+            if (!chosenFile) {
+                alert("Please select or drop a coaching PDF or ZIP first.");
+                return;
             }
 
             const btn = document.getElementById("upload-btn");
             const progressBox = document.getElementById("progress-box");
             const statusText = document.getElementById("progress-status-text");
+            const progressPercent = document.getElementById("progress-percent");
             const progressBar = document.getElementById("progress-bar-fill");
 
             btn.disabled = true;
             progressBox.classList.remove("hidden");
-            statusText.innerText = `Uploading and parsing '${chosenFile.name}'...`;
-            progressBar.style.width = "30%";
+            statusText.innerText = `Uploading and queuing '${chosenFile.name}' for background ingestion...`;
+            progressPercent.innerText = "5%";
+            progressBar.style.width = "5%";
 
             const formData = new FormData();
             formData.append("file", chosenFile);
+            formData.append("course", course);
+            formData.append("level", level);
             formData.append("subject", subject);
 
             try {
-                progressBar.style.width = "65%";
-                statusText.innerText = "Extracting text and generating Google embeddings into Pinecone Cloud...";
-
                 const resp = await fetch("/api/admin/upload-cloud-pdf", {
                     method: "POST",
+                    headers: {
+                        "X-Admin-Key": adminKey
+                    },
                     body: formData
                 });
-                const result = await resp.json();
 
-                if (result.success) {
-                    progressBar.style.width = "100%";
-                    statusText.innerHTML = `<span class="text-emerald-600 font-bold">✓ Successfully uploaded and indexed into Cloud Database!</span>`;
-                    alert(`Success! Indexed ${result.chunks_count} knowledge sections into Pinecone Cloud.`);
-                    chosenFile = null;
-                    document.getElementById("pdf-file-input").value = "";
-                    document.getElementById("file-display-name").innerText = "Click to browse or drag & drop another PDF";
-                    loadCatalog();
-                } else {
-                    alert("Upload error: " + (result.detail || "Could not process PDF"));
+                if (resp.status === 401) {
+                    sessionStorage.removeItem("admin_key");
+                    alert("Unauthorized: Invalid Admin Password! Please try again.");
+                    btn.disabled = false;
+                    progressBox.classList.add("hidden");
+                    return;
                 }
+
+                const result = await resp.json();
+                if (!result.success || !result.job_id) {
+                    alert("Upload error: " + (result.detail || "Could not schedule ingestion"));
+                    btn.disabled = false;
+                    progressBox.classList.add("hidden");
+                    return;
+                }
+
+                // Poll job status until complete or failed
+                const jobId = result.job_id;
+                statusText.innerText = `Job queued. Starting background embedding...`;
+                progressPercent.innerText = "15%";
+                progressBar.style.width = "15%";
+
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const jobResp = await fetch(`/api/admin/jobs/${jobId}`, {
+                            headers: {
+                                "X-Admin-Key": adminKey
+                            }
+                        });
+                        if (jobResp.status === 401) {
+                            clearInterval(pollInterval);
+                            btn.disabled = false;
+                            progressBox.classList.add("hidden");
+                            return;
+                        }
+
+                        const job = await jobResp.json();
+                        const pct = job.progress || 15;
+                        progressBar.style.width = `${pct}%`;
+                        progressPercent.innerText = `${pct}%`;
+                        statusText.innerText = job.message || "Processing in background...";
+
+                        if (job.status === "completed") {
+                            clearInterval(pollInterval);
+                            btn.disabled = false;
+                            progressBar.style.width = "100%";
+                            progressPercent.innerText = "100%";
+                            statusText.innerHTML = `<span class="text-emerald-600 font-bold">✓ ${job.message}</span>`;
+                            
+                            if (job.needs_ocr) {
+                                alert(`Upload complete! Warning: Scanned image pages were detected and marked as requiring OCR in namespace '${job.namespace || ''}'.`);
+                            } else {
+                                alert(`Success! Ingested ${job.chunks_count || 0} chunks into cloud namespace.`);
+                            }
+
+                            chosenFile = null;
+                            document.getElementById("pdf-file-input").value = "";
+                            document.getElementById("file-display-name").innerText = "Click to browse or drag & drop another PDF or ZIP";
+                            loadCatalog();
+
+                            setTimeout(() => {
+                                progressBox.classList.add("hidden");
+                            }, 3500);
+
+                        } else if (job.status === "failed") {
+                            clearInterval(pollInterval);
+                            btn.disabled = false;
+                            progressBar.style.width = "100%";
+                            progressBar.classList.remove("bg-amber-500");
+                            progressBar.classList.add("bg-red-500");
+                            progressPercent.innerText = "Error";
+                            statusText.innerHTML = `<span class="text-red-600 font-bold">✗ Failed: ${job.error || job.message}</span>`;
+                            alert("Ingestion failed: " + (job.error || job.message));
+                            
+                            setTimeout(() => {
+                                progressBox.classList.add("hidden");
+                                progressBar.classList.remove("bg-red-500");
+                                progressBar.classList.add("bg-amber-500");
+                            }, 5000);
+                        }
+                    } catch (pollErr) {
+                        console.error("Poll error:", pollErr);
+                    }
+                }, 1500);
+
             } catch (err) {
                 console.error(err);
                 alert("Upload failed. Please check server connection.");
-            } finally {
                 btn.disabled = false;
-                setTimeout(() => {
-                    progressBox.classList.add("hidden");
-                }, 3000);
+                progressBox.classList.add("hidden");
             }
         }
 
         async function loadCatalog() {
+            const adminKey = getAdminKey();
             const list = document.getElementById("materials-list");
+
+            if (!adminKey) {
+                list.innerHTML = `
+                    <div class="col-span-full text-center py-6 text-xs text-amber-600 font-bold">
+                        Admin password required. <button onclick="getAdminKey(true); loadCatalog();" class="underline">Enter Password</button>
+                    </div>
+                `;
+                return;
+            }
+
             list.innerHTML = `<p class="col-span-full text-center py-6 text-xs text-slate-400">Loading cloud materials...</p>`;
 
             try {
-                const resp = await fetch("/api/admin/materials");
+                const resp = await fetch("/api/admin/materials", {
+                    headers: {
+                        "X-Admin-Key": adminKey
+                    }
+                });
+
+                if (resp.status === 401) {
+                    sessionStorage.removeItem("admin_key");
+                    list.innerHTML = `
+                        <div class="col-span-full text-center py-6 text-xs text-red-500 font-semibold">
+                            Unauthorized: Invalid Admin Password. <button onclick="getAdminKey(true); loadCatalog();" class="underline font-bold text-slate-800">Retry</button>
+                        </div>
+                    `;
+                    return;
+                }
+
                 const data = await resp.json();
 
                 if (!data.materials || data.materials.length === 0) {
                     list.innerHTML = `
                         <div class="col-span-full text-center py-8 text-slate-400 bg-slate-50 border border-slate-200 rounded-2xl">
                             <i data-lucide="book-open" class="w-8 h-8 mx-auto mb-2 opacity-40"></i>
-                            <p class="text-sm font-medium">No external PDFs uploaded yet.</p>
-                            <p class="text-xs text-slate-400 mt-1">Pre-loaded statutory exam provisions are active in Pinecone Cloud.</p>
+                            <p class="text-sm font-medium">No study materials uploaded yet.</p>
+                            <p class="text-xs text-slate-400 mt-1">Upload coaching PDFs with Course and Level to populate namespaces.</p>
                         </div>
                     `;
                     lucide.createIcons();
                     return;
                 }
 
-                list.innerHTML = data.materials.map(m => `
-                    <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col justify-between hover:shadow-sm transition">
-                        <div>
-                            <div class="flex items-center justify-between gap-2 mb-2">
-                                <span class="text-[10px] uppercase font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full truncate">
-                                    ${m.subject.replace(/_/g, " ")}
-                                </span>
-                                <span class="text-[10px] text-slate-400">${m.chunks} chunks</span>
+                list.innerHTML = data.materials.map(m => {
+                    const isLegacy = !m.course || !m.level;
+                    const ns = isLegacy ? 'default (deprecated)' : `${m.course.toLowerCase()}-${m.level.toLowerCase().replace(/_/g, '-')}`;
+                    const ocrBadge = m.needs_ocr ? `
+                        <span class="text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1" title="Scanned image pages detected with no extractable text">
+                            <span>⚠️ Needs OCR</span>
+                        </span>
+                    ` : '';
+                    const levelBadge = isLegacy ? `
+                        <span class="text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full" title="Uploaded prior to namespace architecture. Re-upload needed.">
+                            Legacy (Re-upload needed)
+                        </span>
+                    ` : `
+                        <span class="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
+                            ${m.course} ${m.level}
+                        </span>
+                    `;
+
+                    return `
+                        <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 flex flex-col justify-between hover:shadow-sm transition">
+                            <div>
+                                <div class="flex items-center justify-between gap-1 mb-2 flex-wrap">
+                                    ${levelBadge}
+                                    ${ocrBadge}
+                                    <span class="text-[10px] text-slate-400 ml-auto font-medium">${m.chunks || 0} chunks</span>
+                                </div>
+                                <h4 class="font-bold text-xs text-slate-800 truncate" title="${m.doc_name}">📄 ${m.doc_name}</h4>
+                                <p class="text-[11px] font-semibold text-slate-600 mt-1">${(m.subject || 'General').replace(/_/g, " ")}</p>
+                                <p class="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+                                    <span>Namespace: <code class="font-mono text-amber-700 font-semibold">${ns}</code></span>
+                                    <span>${m.pages || 0} pages</span>
+                                </p>
+                                <p class="text-[10px] text-slate-400 mt-0.5">Uploaded: ${new Date(m.uploaded_at).toLocaleDateString()}</p>
                             </div>
-                            <h4 class="font-bold text-xs text-slate-800 truncate" title="${m.doc_name}">📄 ${m.doc_name}</h4>
-                            <p class="text-[11px] text-slate-500 mt-1">Uploaded: ${new Date(m.uploaded_at).toLocaleDateString()}</p>
+                            <div class="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-xs">
+                                <span class="${isLegacy ? 'text-amber-600' : 'text-emerald-600'} font-semibold text-[11px] flex items-center gap-1">
+                                    <span class="w-1.5 h-1.5 rounded-full ${isLegacy ? 'bg-amber-500' : 'bg-emerald-500'}"></span>
+                                    <span>${isLegacy ? 'Deprecated Default Namespace' : 'Active in Namespace'}</span>
+                                </span>
+                            </div>
                         </div>
-                        <div class="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                            <span class="text-emerald-600 font-semibold text-[11px] flex items-center gap-1">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                <span>Active in Cloud</span>
-                            </span>
-                        </div>
-                    </div>
-                `).join("");
+                    `;
+                }).join("");
 
                 lucide.createIcons();
 
@@ -324,6 +781,169 @@
                 list.innerHTML = `<p class="col-span-full text-center py-6 text-xs text-red-500">Failed to load cloud materials catalog.</p>`;
             }
         }
+
+        let allInsightsData = null;
+        let lowScoreFilterActive = false;
+
+        function escapeHtml(str) {
+            if (!str) return "";
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function switchAdminTab(tab) {
+            const materialsTab = document.getElementById("tab-content-materials");
+            const insightsTab = document.getElementById("tab-content-insights");
+            const btnMat = document.getElementById("tab-btn-materials");
+            const btnIns = document.getElementById("tab-btn-insights");
+
+            if (tab === "insights") {
+                materialsTab.classList.add("hidden");
+                insightsTab.classList.remove("hidden");
+                btnIns.className = "px-4 py-2.5 rounded-2xl text-xs font-bold bg-slate-900 text-white shadow-sm transition flex items-center gap-2 cursor-pointer";
+                btnMat.className = "px-4 py-2.5 rounded-2xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-2 cursor-pointer";
+                window.location.hash = "insights";
+                loadInsights();
+            } else {
+                insightsTab.classList.add("hidden");
+                materialsTab.classList.remove("hidden");
+                btnMat.className = "px-4 py-2.5 rounded-2xl text-xs font-bold bg-slate-900 text-white shadow-sm transition flex items-center gap-2 cursor-pointer";
+                btnIns.className = "px-4 py-2.5 rounded-2xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-2 cursor-pointer";
+                window.location.hash = "materials";
+            }
+            lucide.createIcons();
+        }
+
+        async function loadInsights() {
+            const adminKey = getAdminKey();
+            if (!adminKey) return;
+
+            try {
+                const resp = await fetch("/api/admin/insights", {
+                    headers: { "X-Admin-Key": adminKey }
+                });
+                if (resp.status === 401) {
+                    sessionStorage.removeItem("admin_key");
+                    alert("Unauthorized: invalid admin password.");
+                    return;
+                }
+                const data = await resp.json();
+                allInsightsData = data;
+
+                document.getElementById("stat-total-chats").innerText = data.total_chats || 0;
+                document.getElementById("stat-material-pct").innerText = `${data.material_pct || 0}%`;
+                document.getElementById("stat-general-pct").innerText = `(${data.general_pct || 0}% General)`;
+                document.getElementById("stat-avg-latency").innerText = `${Math.round(data.avg_response_time_ms || 0)} ms`;
+                document.getElementById("stat-retrieval-rate").innerText = `${data.retrieval_success_rate || 0}%`;
+
+                renderInsightsTable();
+                lucide.createIcons();
+            } catch (err) {
+                console.error("Failed to load insights:", err);
+            }
+        }
+
+        function toggleLowScoreFilter() {
+            lowScoreFilterActive = !lowScoreFilterActive;
+            const btn = document.getElementById("btn-low-score-filter");
+            if (lowScoreFilterActive) {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 text-slate-950 border border-amber-600 transition flex items-center gap-1.5 cursor-pointer shadow-sm";
+            } else {
+                btn.className = "px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition flex items-center gap-1.5 cursor-pointer";
+            }
+            renderInsightsTable();
+        }
+
+        function renderInsightsTable() {
+            if (!allInsightsData || !allInsightsData.recent_chats) return;
+
+            const courseFilter = document.getElementById("filter-log-course")?.value || "";
+            const levelFilter = document.getElementById("filter-log-level")?.value || "";
+            const sourceFilter = document.getElementById("filter-log-source")?.value || "";
+            const minScoreThreshold = allInsightsData.min_score_threshold || 0.62;
+
+            const tbody = document.getElementById("insights-table-body");
+            const badge = document.getElementById("logs-count-badge");
+
+            const filtered = allInsightsData.recent_chats.filter(row => {
+                if (courseFilter && row.course !== courseFilter) return false;
+                if (levelFilter && row.level !== levelFilter) return false;
+                if (sourceFilter && row.source !== sourceFilter) return false;
+                if (lowScoreFilterActive && (row.top_score || 0) >= minScoreThreshold) return false;
+                return true;
+            });
+
+            badge.innerText = `Showing ${filtered.length} of ${allInsightsData.recent_chats.length} logs`;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-8 text-slate-400">
+                            No logs matching the selected filters.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(row => {
+                const isMaterial = row.source === "material";
+                const sourceBadge = isMaterial
+                    ? `<span class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px]">Material</span>`
+                    : `<span class="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-bold text-[10px]">General</span>`;
+
+                const timeStr = row.timestamp ? new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-';
+                const scoreVal = row.top_score !== null && row.top_score !== undefined ? Number(row.top_score).toFixed(3) : '0.000';
+                const isLowScore = Number(scoreVal) < minScoreThreshold;
+                const scoreBadge = isLowScore
+                    ? `<span class="font-mono text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold">${scoreVal}</span>`
+                    : `<span class="font-mono text-slate-700">${scoreVal}</span>`;
+
+                return `
+                    <tr class="hover:bg-slate-50/80 transition">
+                        <td class="px-3 py-3 text-[11px] text-slate-400 whitespace-nowrap">${timeStr}</td>
+                        <td class="px-3 py-3 text-[11px] font-bold text-slate-700 whitespace-nowrap">${row.course || ''} ${row.level || ''}</td>
+                        <td class="px-4 py-3 font-medium text-slate-900 max-w-xs truncate" title="${escapeHtml(row.question || '')}">${escapeHtml(row.question || '')}</td>
+                        <td class="px-4 py-3 text-slate-500 max-w-sm truncate text-[11px]" title="${escapeHtml(row.answer_preview || '')}">${escapeHtml(row.answer_preview || '')}</td>
+                        <td class="px-3 py-3 whitespace-nowrap">${sourceBadge}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-[11px]">${scoreBadge}</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-[11px] text-slate-500 font-mono">${row.response_time_ms || 0} ms</td>
+                        <td class="px-3 py-3 whitespace-nowrap text-[10px] text-slate-400 font-mono">${(row.model_used || '').replace('gemini-', '')}</td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        async function exportChatLogs() {
+            const adminKey = getAdminKey();
+            if (!adminKey) return;
+            try {
+                const resp = await fetch("/api/admin/chat-logs/export", {
+                    headers: { "X-Admin-Key": adminKey }
+                });
+                if (!resp.ok) {
+                    alert("Export failed: unauthorized or server error.");
+                    return;
+                }
+                const blob = await resp.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `excel_ai_chat_logs_${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error("Export error:", e);
+                alert("Failed to export chat logs.");
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            if (window.location.hash === "#insights") {
+                switchAdminTab("insights");
+            }
+        });
     </script>
 </body>
 </html>

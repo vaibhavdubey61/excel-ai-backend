@@ -11,7 +11,86 @@ document.addEventListener("DOMContentLoaded", () => {
     initClipboardPaste();
     initSpeechRecognition();
     loadSessionsFromStorage();
+    initStudentTrack();
 });
+
+// Student Course & Level Track
+function initStudentTrack() {
+    const course = localStorage.getItem("excel_user_course");
+    const level = localStorage.getItem("excel_user_level");
+    if (!course || !level) {
+        openOnboardingModal(false);
+    } else {
+        updateCourseLevelBadges(course, level);
+    }
+}
+
+function updateCourseLevelBadges(course, level) {
+    const label = `${course} ${level}`;
+    const hBadge = document.getElementById("header-course-level-badge");
+    const sBadge = document.getElementById("sidebar-course-level-badge");
+    if (hBadge) hBadge.innerText = label;
+    if (sBadge) sBadge.innerText = label;
+}
+
+function openOnboardingModal(allowClose = true) {
+    const modal = document.getElementById("onboarding-modal");
+    if (!modal) return;
+    const course = localStorage.getItem("excel_user_course") || "CA";
+    const level = localStorage.getItem("excel_user_level") || "Inter";
+
+    const cSelect = document.getElementById("onboarding-course-select");
+    if (cSelect) cSelect.value = course;
+    onOnboardingCourseChanged();
+    const lSelect = document.getElementById("onboarding-level-select");
+    if (lSelect) lSelect.value = level;
+
+    modal.style.display = "flex";
+    modal.classList.remove("hidden");
+    lucide.createIcons();
+}
+
+function onOnboardingCourseChanged() {
+    const cSelect = document.getElementById("onboarding-course-select");
+    const lSelect = document.getElementById("onboarding-level-select");
+    if (!cSelect || !lSelect) return;
+    const course = cSelect.value;
+    lSelect.innerHTML = "";
+
+    const levelOptions = {
+        "CA": ["Foundation", "Inter", "Final"],
+        "CS": ["Executive", "Professional"],
+        "CMA": ["Foundation", "Inter", "Final"]
+    };
+
+    const levels = levelOptions[course] || ["Foundation", "Inter", "Final"];
+    levels.forEach(lvl => {
+        const opt = document.createElement("option");
+        opt.value = lvl;
+        opt.innerText = lvl;
+        lSelect.appendChild(opt);
+    });
+}
+
+function saveStudentOnboarding() {
+    const cSelect = document.getElementById("onboarding-course-select");
+    const lSelect = document.getElementById("onboarding-level-select");
+    const course = cSelect ? cSelect.value : "CA";
+    const level = lSelect ? lSelect.value : "Inter";
+
+    localStorage.setItem("excel_user_course", course);
+    localStorage.setItem("excel_user_level", level);
+    updateCourseLevelBadges(course, level);
+    if (typeof populateMcqSubjects === "function") {
+        populateMcqSubjects();
+    }
+
+    const modal = document.getElementById("onboarding-modal");
+    if (modal) {
+        modal.style.display = "none";
+        modal.classList.add("hidden");
+    }
+}
 
 // Auto-resize textarea
 function autoResize(textarea) {
@@ -389,6 +468,17 @@ async function sendMessage() {
     if (text) formData.append("message", text);
     if (currentAttachment) formData.append("file", currentAttachment);
 
+    const course = localStorage.getItem("excel_user_course") || "CA";
+    const level = localStorage.getItem("excel_user_level") || "Inter";
+    formData.append("course", course);
+    formData.append("level", level);
+
+    const historyList = (session.messages || []).slice(-6).map(m => ({
+        role: m.role || "user",
+        text: m.content || m.text || ""
+    }));
+    formData.append("history", JSON.stringify(historyList));
+
     try {
         const resp = await fetch("/api/chat", {
             method: "POST",
@@ -400,7 +490,7 @@ async function sendMessage() {
         const loader = document.getElementById(loadingId);
         if (loader) loader.remove();
 
-        const replyMarkdown = data.reply || "I could not generate an answer right now. Please try again.";
+        const replyMarkdown = data.reply || data.detail || "I could not generate an answer right now. Please try again.";
 
         // 4. Render Assistant Bubble
         appendAssistantBubble(replyMarkdown, true);
@@ -460,9 +550,9 @@ function cleanExamMarkdown(text) {
     cleaned = cleaned.replace(/\\cdot\b/g, "·");
     cleaned = cleaned.replace(/\\div\b/g, "÷");
     cleaned = cleaned.replace(/\\pm\b/g, "±");
-    cleaned = cleaned.replace(/\\leq\b/g, "≤");
-    cleaned = cleaned.replace(/\\geq\b/g, "≥");
-    cleaned = cleaned.replace(/\\neq\b/g, "≠");
+    cleaned = cleaned.replace(/\\(leq|le)\b/g, "≤");
+    cleaned = cleaned.replace(/\\(geq|ge)\b/g, "≥");
+    cleaned = cleaned.replace(/\\(neq|ne)\b/g, "≠");
     cleaned = cleaned.replace(/\\approx\b/g, "≈");
 
     // 3. Clean \text{...} wrappers (e.g. \text{₹} -> ₹, \text{LRV} -> LRV, \text{ hours} -> hours)
@@ -478,15 +568,19 @@ function cleanExamMarkdown(text) {
     cleaned = cleaned.replace(/\\left\s*([(\[{|])/g, "$1");
     cleaned = cleaned.replace(/\\right\s*([)\]}|])/g, "$1");
 
-    // 6. Strip $$ and $ wrappers around plain words and numbers
+    // 6. Clean escaped brackets \[ \] \( \)
+    cleaned = cleaned.replace(/\\\[/g, "[").replace(/\\\]/g, "]").replace(/\\\(/g, "(").replace(/\\\)/g, ")");
+
+    // 7. Strip $$ and $ wrappers around plain words and numbers
     cleaned = cleaned.replace(/\$\$([\s\S]*?)\$\$/g, (match, p1) => {
         return "\n\n" + p1.trim() + "\n\n";
     });
     cleaned = cleaned.replace(/\$([^\$\n]+)\$/g, (match, p1) => {
         return p1.trim();
     });
+    cleaned = cleaned.replace(/\$/g, "");
 
-    // 7. Clean up double spaces
+    // 8. Clean up double spaces
     cleaned = cleaned.replace(/[ \t]{2,}/g, " ");
 
     return cleaned.trim();
@@ -610,13 +704,109 @@ function escapeQuotes(str) {
 
 // ----------------- INTERACTIVE MCQ ENGINE -----------------
 
+const MCQ_SYLLABUS_MAP = {
+    "CA": {
+        "Foundation": [
+            "Accounting",
+            "Business Laws",
+            "Quantitative Aptitude",
+            "Business Economics",
+            "Business and Commercial Knowledge"
+        ],
+        "Inter": [
+            "Advanced Accounting",
+            "Corporate and Other Laws",
+            "Taxation",
+            "Cost and Management Accounting",
+            "Auditing and Ethics",
+            "Financial Management and Strategic Management"
+        ],
+        "Final": [
+            "Financial Reporting",
+            "Advanced Financial Management",
+            "Advanced Auditing and Professional Ethics",
+            "Direct Tax Laws and International Taxation",
+            "Indirect Tax Laws",
+            "Integrated Business Solutions"
+        ]
+    },
+    "CS": {
+        "Executive": [
+            "Jurisprudence, Interpretation and General Laws",
+            "Company Law and Practice",
+            "Setting up of Business, Industrial and Labour Laws",
+            "Corporate Accounting and Financial Management",
+            "Capital Market and Securities Laws",
+            "Economic, Commercial and Intellectual Property Laws",
+            "Tax Laws and Practice"
+        ],
+        "Professional": [
+            "Environmental, Social and Governance (ESG) - Principles & Practice",
+            "Drafting, Pleadings and Appearances",
+            "Compliance Management, Audit & Due Diligence",
+            "Strategic Management & Corporate Finance",
+            "Corporate Restructuring, Valuation and Insolvency"
+        ]
+    },
+    "CMA": {
+        "Foundation": [
+            "Fundamentals of Business Laws and Business Communication",
+            "Fundamentals of Financial and Cost Accounting",
+            "Fundamentals of Business Mathematics and Statistics",
+            "Fundamentals of Business Economics and Management"
+        ],
+        "Inter": [
+            "Financial Accounting",
+            "Corporate Laws and Practice",
+            "Direct and Indirect Taxation",
+            "Cost Accounting",
+            "Operations Management and Strategic Management",
+            "Corporate Accounting and Auditing",
+            "Financial Management and Business Data Analytics",
+            "Management Accounting"
+        ],
+        "Final": [
+            "Corporate and Economic Laws",
+            "Strategic Financial Management",
+            "Strategic Cost Management",
+            "Direct Tax Laws and International Taxation",
+            "Corporate Financial Reporting",
+            "Indirect Tax Laws and Practice",
+            "Cost and Management Audit",
+            "Strategic Performance Management and Business Valuation"
+        ]
+    }
+};
+
 let mcqActiveQuiz = null;
 let mcqCurrentIndex = 0;
-let mcqUserAnswers = {};
-let mcqSelectedMode = 'random';
+let mcqUserAnswers = {}; // { index: "A" | "B" | "C" | "D" }
+let mcqSubmittedQuestions = {}; // { index: true }
+let mcqSelectedMode = 'random'; // 'random' or 'topic'
 let mcqSelectedCount = 10;
 let quizTimerInterval = null;
 let quizSecondsElapsed = 0;
+let mcqResultsFilter = 'all'; // 'all' or 'mistakes'
+
+function populateMcqSubjects() {
+    const course = localStorage.getItem("excel_user_course") || "CA";
+    const level = localStorage.getItem("excel_user_level") || "Inter";
+
+    const badge = document.getElementById("mcq-student-track-badge");
+    if (badge) badge.innerText = `${course} ${level}`;
+
+    const dropdown = document.getElementById("mcq-subject-dropdown");
+    if (!dropdown) return;
+
+    dropdown.innerHTML = `<option value="All">All Subjects (Mixed Practice)</option>`;
+    const subjects = (MCQ_SYLLABUS_MAP[course] && MCQ_SYLLABUS_MAP[course][level]) || [];
+    subjects.forEach(subj => {
+        const opt = document.createElement("option");
+        opt.value = subj;
+        opt.innerText = subj;
+        dropdown.appendChild(opt);
+    });
+}
 
 function openMcqModal(defaultTopic = null) {
     const modal = document.getElementById("mcq-modal");
@@ -627,27 +817,13 @@ function openMcqModal(defaultTopic = null) {
     modal.style.display = "block";
     document.body.classList.add("overflow-hidden");
 
+    populateMcqSubjects();
     resetMcqToSetup();
 
     if (defaultTopic) {
         selectMcqMode('topic');
-        const dropdown = document.getElementById("mcq-topic-dropdown");
         const customInput = document.getElementById("mcq-custom-topic");
-        let matched = false;
-
-        for (let opt of dropdown.options) {
-            if (opt.value.toLowerCase().includes(defaultTopic.toLowerCase()) || 
-                opt.text.toLowerCase().includes(defaultTopic.toLowerCase())) {
-                dropdown.value = opt.value;
-                matched = true;
-                break;
-            }
-        }
-        if (!matched) {
-            dropdown.value = "Custom";
-            customInput.value = defaultTopic;
-            customInput.classList.remove("hidden");
-        }
+        if (customInput) customInput.value = defaultTopic;
     }
 
     lucide.createIcons();
@@ -677,38 +853,27 @@ function selectMcqMode(mode) {
     const topicSelector = document.getElementById("mcq-topic-selector");
 
     if (mode === 'random') {
-        btnRandom.className = "p-4 rounded-2xl border-2 border-amber-500 bg-amber-500/10 cursor-pointer transition flex items-start gap-3";
-        btnTopic.className = "p-4 rounded-2xl border border-[#383838] bg-[#242424] hover:bg-[#282828] cursor-pointer transition flex items-start gap-3";
-        topicSelector.classList.add("hidden");
+        if (btnRandom) btnRandom.className = "p-4 rounded-2xl border-2 border-amber-500 bg-amber-500/10 cursor-pointer transition flex items-start gap-3";
+        if (btnTopic) btnTopic.className = "p-4 rounded-2xl border border-[#383838] bg-[#242424] hover:bg-[#282828] cursor-pointer transition flex items-start gap-3";
+        if (topicSelector) topicSelector.classList.add("hidden");
     } else {
-        btnTopic.className = "p-4 rounded-2xl border-2 border-amber-500 bg-amber-500/10 cursor-pointer transition flex items-start gap-3";
-        btnRandom.className = "p-4 rounded-2xl border border-[#383838] bg-[#242424] hover:bg-[#282828] cursor-pointer transition flex items-start gap-3";
-        topicSelector.classList.remove("hidden");
-    }
-}
-
-function handleMcqDropdownChange(selectElem) {
-    const customInput = document.getElementById("mcq-custom-topic");
-    if (selectElem.value === "Custom") {
-        customInput.classList.remove("hidden");
-        customInput.focus();
-    } else {
-        customInput.classList.add("hidden");
+        if (btnTopic) btnTopic.className = "p-4 rounded-2xl border-2 border-amber-500 bg-amber-500/10 cursor-pointer transition flex items-start gap-3";
+        if (btnRandom) btnRandom.className = "p-4 rounded-2xl border border-[#383838] bg-[#242424] hover:bg-[#282828] cursor-pointer transition flex items-start gap-3";
+        if (topicSelector) topicSelector.classList.remove("hidden");
     }
 }
 
 function setMcqCount(count) {
     mcqSelectedCount = count;
-    const btn5 = document.getElementById("count-btn-5");
-    const btn10 = document.getElementById("count-btn-10");
-
-    if (count === 10) {
-        if (btn10) btn10.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition flex items-center justify-center gap-1.5 shadow-sm";
-        if (btn5) btn5.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition";
-    } else {
-        if (btn5) btn5.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition flex items-center justify-center gap-1.5 shadow-sm";
-        if (btn10) btn10.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition";
-    }
+    [5, 10, 15].forEach(c => {
+        const btn = document.getElementById(`count-btn-${c}`);
+        if (!btn) return;
+        if (c === count) {
+            btn.className = "py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition text-center shadow-sm cursor-pointer";
+        } else {
+            btn.className = "py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition text-center cursor-pointer";
+        }
+    });
 }
 
 function resetMcqToSetup() {
@@ -721,52 +886,67 @@ function resetMcqToSetup() {
     mcqActiveQuiz = null;
     mcqCurrentIndex = 0;
     mcqUserAnswers = {};
+    mcqSubmittedQuestions = {};
     setMcqCount(10);
+    selectMcqMode('random');
 
     const startBtn = document.getElementById("start-quiz-btn");
-    startBtn.disabled = false;
-    startBtn.innerHTML = `
-        <i data-lucide="play" class="w-4 h-4 fill-slate-950"></i>
-        <span>Start 10-Question Interactive Test</span>
-    `;
+    if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = `
+            <i data-lucide="play" class="w-4 h-4 fill-slate-950"></i>
+            <span>Start Interactive Practice Test</span>
+        `;
+    }
     lucide.createIcons();
 }
 
 async function startInteractiveQuiz() {
+    let subject = null;
     let topic = "Random";
+
     if (mcqSelectedMode === 'topic') {
-        const dropdown = document.getElementById("mcq-topic-dropdown");
-        if (dropdown.value === "Custom") {
-            const customVal = document.getElementById("mcq-custom-topic").value.trim();
-            if (!customVal) {
-                alert("Please enter the custom topic you want to practice.");
-                return;
-            }
+        const subjElem = document.getElementById("mcq-subject-dropdown");
+        if (subjElem && subjElem.value !== "All") {
+            subject = subjElem.value;
+        }
+        const customVal = (document.getElementById("mcq-custom-topic")?.value || "").trim();
+        if (customVal) {
             topic = customVal;
-        } else {
-            topic = dropdown.value;
+        } else if (subject) {
+            topic = subject;
         }
     }
 
     const startBtn = document.getElementById("start-quiz-btn");
-    startBtn.disabled = true;
-    startBtn.innerHTML = `
-        <span class="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-        <span>Generating Exam Questions...</span>
-    `;
+    if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.innerHTML = `
+            <span class="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+            <span>Generating Exam Questions...</span>
+        `;
+    }
 
     try {
+        const studentCourse = localStorage.getItem("excel_user_course") || "CA";
+        const studentLevel = localStorage.getItem("excel_user_level") || "Inter";
+
         const resp = await fetch("/api/mcq/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+                course: studentCourse,
+                level: studentLevel,
+                subject: subject,
                 topic: topic,
-                count: mcqSelectedCount,
-                level: "CA_Inter"
+                count: mcqSelectedCount
             })
         });
 
-        if (!resp.ok) throw new Error("Failed to generate MCQs");
+        if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.detail || "Failed to generate MCQs");
+        }
         const data = await resp.json();
 
         if (!data.questions || data.questions.length === 0) {
@@ -776,8 +956,9 @@ async function startInteractiveQuiz() {
         mcqActiveQuiz = data;
         mcqCurrentIndex = 0;
         mcqUserAnswers = {};
+        mcqSubmittedQuestions = {};
 
-        // Start Stopwatch Timer
+        // Stopwatch Timer
         clearInterval(quizTimerInterval);
         quizSecondsElapsed = 0;
         const timerElem = document.getElementById("quiz-timer-text");
@@ -790,9 +971,10 @@ async function startInteractiveQuiz() {
             if (el) el.innerText = `${mins}:${secs}`;
         }, 1000);
 
-        // Update topic badge in header
+        // Header topic badge
         const badge = document.getElementById("mcq-topic-badge");
-        badge.innerText = topic === "Random" ? "Random Exam Test" : (topic.length > 25 ? topic.substring(0, 25) + "..." : topic);
+        const displayLabel = topic === "Random" ? "Mixed Syllabus" : (topic.length > 25 ? topic.substring(0, 25) + "..." : topic);
+        badge.innerText = displayLabel;
         badge.classList.remove("hidden");
 
         // Switch to Quiz View
@@ -803,7 +985,7 @@ async function startInteractiveQuiz() {
 
     } catch (err) {
         console.error(err);
-        alert("Could not load interactive quiz. Please check server connection.");
+        alert(err.message || "Could not load interactive quiz. Please check server connection.");
         resetMcqToSetup();
     }
 }
@@ -819,26 +1001,38 @@ function renderQuizQuestion(index) {
 
     const q = mcqActiveQuiz.questions[index];
     const total = mcqActiveQuiz.questions.length;
+    const correctKey = (q.correct_answer || q.correct_option || "").toUpperCase().trim();
+    const isSubmitted = Boolean(mcqSubmittedQuestions[index]);
+    const userChoice = mcqUserAnswers[index];
 
     // 1. Progress and Answered Counters
     document.getElementById("quiz-question-counter").innerText = `Question ${index + 1} of ${total}`;
-    const answeredCount = Object.keys(mcqUserAnswers).length;
-    document.getElementById("quiz-answered-counter").innerText = `${answeredCount} of ${total} answered`;
+    const answeredCount = Object.keys(mcqSubmittedQuestions).length;
+    document.getElementById("quiz-answered-counter").innerText = `${answeredCount} of ${total} completed`;
 
     const progressPct = ((index + 1) / total) * 100;
     document.getElementById("quiz-progress-bar").style.width = `${progressPct}%`;
 
-    // 2. Interactive Numbered Question Palette (1..total)
+    // 2. Interactive Palette (1..total)
     const paletteContainer = document.getElementById("quiz-palette");
     if (paletteContainer) {
-        paletteContainer.innerHTML = mcqActiveQuiz.questions.map((_, i) => {
+        paletteContainer.innerHTML = mcqActiveQuiz.questions.map((item, i) => {
             const isCurrent = i === index;
-            const isAnswered = mcqUserAnswers[i] !== undefined;
+            const submitted = Boolean(mcqSubmittedQuestions[i]);
+            const picked = mcqUserAnswers[i];
+            const itemCorrect = (item.correct_answer || item.correct_option || "").toUpperCase().trim();
+
             let pillClass = "w-7 h-7 sm:w-8 sm:h-8 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ";
             if (isCurrent) {
-                pillClass += "bg-amber-500 text-slate-950 ring-2 ring-amber-400 shadow-md";
-            } else if (isAnswered) {
-                pillClass += "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500/30";
+                pillClass += "ring-2 ring-amber-400 bg-amber-500 text-slate-950 font-black shadow-md";
+            } else if (submitted) {
+                if (picked === itemCorrect) {
+                    pillClass += "bg-emerald-500/20 text-emerald-300 border border-emerald-500/60";
+                } else {
+                    pillClass += "bg-red-500/20 text-red-300 border border-red-500/60";
+                }
+            } else if (picked) {
+                pillClass += "bg-amber-500/20 text-amber-300 border border-amber-500/40";
             } else {
                 pillClass += "bg-[#292929] text-neutral-400 border border-[#3e3e3e] hover:bg-[#333] hover:text-white";
             }
@@ -846,59 +1040,157 @@ function renderQuizQuestion(index) {
         }).join("");
     }
 
-    // 3. Question Text (Cleaned from any LaTeX syntax)
+    // 3. Question Text
     const cleanedQText = cleanExamMarkdown(q.question);
-    document.getElementById("quiz-question-text").innerHTML = marked.parse(cleanedQText);
+    const qElem = document.getElementById("quiz-question-text");
+    qElem.innerHTML = marked.parse(cleanedQText);
 
-    // 4. Render 4 Options (Answers 100% hidden while taking quiz!)
+    // 4. Render 4 Options
     const optionsContainer = document.getElementById("quiz-options-container");
-    const selectedKey = mcqUserAnswers[index];
-
     const optionKeys = ["A", "B", "C", "D"];
+
     optionsContainer.innerHTML = optionKeys.map(key => {
-        const optionVal = q.options[key] || "";
-        const cleanedOpt = cleanExamMarkdown(optionVal);
-        const isSelected = selectedKey === key;
+        const optionVal = cleanExamMarkdown(q.options[key] || "");
+        const isSelected = userChoice === key;
 
-        const borderClass = isSelected
-            ? "border-amber-400 bg-amber-500/15 shadow-md text-white"
-            : "border-[#383838] bg-[#292929] hover:bg-[#303030] hover:border-[#484848] text-neutral-200";
+        let borderClass = "";
+        let badgeClass = "";
+        let iconHtml = "";
 
-        const badgeClass = isSelected
-            ? "bg-amber-400 text-slate-950 font-black"
-            : "bg-[#383838] text-neutral-300 font-bold";
+        if (!isSubmitted) {
+            // Unsubmitted: interactive selection, answers completely hidden!
+            if (isSelected) {
+                borderClass = "border-amber-400 bg-amber-500/15 shadow-md text-white";
+                badgeClass = "bg-amber-400 text-slate-950 font-black";
+                iconHtml = '<i data-lucide="check-circle" class="w-5 h-5 text-amber-400"></i>';
+            } else {
+                borderClass = "border-[#383838] bg-[#292929] hover:bg-[#303030] hover:border-[#484848] text-neutral-200";
+                badgeClass = "bg-[#383838] text-neutral-300 font-bold";
+                iconHtml = '<div class="w-4 h-4 rounded-full border border-neutral-600"></div>';
+            }
+        } else {
+            // Submitted: Reveal correct/incorrect highlights
+            if (key === correctKey) {
+                borderClass = "border-emerald-500 bg-emerald-950/40 text-emerald-100 shadow-md font-semibold";
+                badgeClass = "bg-emerald-500 text-slate-950 font-black";
+                iconHtml = '<span class="text-xs font-bold text-emerald-400 flex items-center gap-1">✓ Correct</span>';
+            } else if (isSelected && key !== correctKey) {
+                borderClass = "border-red-500 bg-red-950/40 text-red-200 line-through opacity-85";
+                badgeClass = "bg-red-500 text-white font-bold";
+                iconHtml = '<span class="text-xs font-bold text-red-400 flex items-center gap-1">✗ Your Pick</span>';
+            } else {
+                borderClass = "border-[#303030] bg-[#222] opacity-60 text-neutral-400";
+                badgeClass = "bg-[#303030] text-neutral-500 font-medium";
+                iconHtml = "";
+            }
+        }
+
+        const clickHandler = !isSubmitted ? `onclick="selectMcqOption('${key}')"` : "";
+        const cursorStyle = !isSubmitted ? "cursor-pointer" : "cursor-default";
 
         return `
-            <div onclick="selectMcqOption('${key}')" class="p-3.5 sm:p-4 rounded-2xl border-2 ${borderClass} cursor-pointer transition flex items-center gap-3">
+            <div ${clickHandler} class="p-3.5 sm:p-4 rounded-2xl border-2 ${borderClass} ${cursorStyle} transition flex items-center gap-3">
                 <div class="w-7 h-7 rounded-xl ${badgeClass} text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
                     ${key}
                 </div>
                 <div class="flex-1 min-w-0 text-xs sm:text-sm font-medium leading-relaxed break-words">
-                    ${escapeHtml(cleanedOpt)}
+                    ${escapeHtml(optionVal)}
                 </div>
-                <div class="w-5 h-5 flex items-center justify-center">
-                    ${isSelected ? '<i data-lucide="check-circle" class="w-5 h-5 text-amber-400"></i>' : '<div class="w-4 h-4 rounded-full border border-neutral-600"></div>'}
+                <div class="flex items-center justify-center flex-shrink-0">
+                    ${iconHtml}
                 </div>
             </div>
         `;
     }).join("");
 
-    // 5. Navigation Buttons
-    const prevBtn = document.getElementById("quiz-prev-btn");
-    prevBtn.disabled = index === 0;
-
+    // 5. Instant Feedback & Reasoning Box
+    const feedbackBox = document.getElementById("quiz-instant-feedback");
+    const checkBtn = document.getElementById("quiz-check-btn");
     const nextBtn = document.getElementById("quiz-next-btn");
-    if (index === total - 1) {
-        nextBtn.innerHTML = `<span>Submit Test</span><i data-lucide="check" class="w-4 h-4"></i>`;
+
+    if (isSubmitted) {
+        feedbackBox.classList.remove("hidden");
+        const statusBadgeContainer = document.getElementById("feedback-status-badge");
+        const isCorrect = userChoice === correctKey;
+
+        if (isCorrect) {
+            statusBadgeContainer.innerHTML = `
+                <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+                    <span>Correct Answer! (+1 Mark)</span>
+                </div>
+            `;
+        } else {
+            statusBadgeContainer.innerHTML = `
+                <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-bold">
+                    <i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>
+                    <span>Incorrect • Your Pick: Option ${userChoice || 'None'} • Correct: Option ${correctKey}</span>
+                </div>
+            `;
+        }
+
+        const explanationElem = document.getElementById("feedback-explanation-text");
+        explanationElem.innerText = cleanExamMarkdown(q.explanation || "Review the statutory section and calculation.");
+
+        if (checkBtn) checkBtn.classList.add("hidden");
+        if (nextBtn) {
+            nextBtn.className = "px-6 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md transition flex items-center gap-1.5 cursor-pointer";
+            if (index === total - 1) {
+                nextBtn.innerHTML = `<span>Finish & View Score</span><i data-lucide="award" class="w-4 h-4"></i>`;
+            } else {
+                nextBtn.innerHTML = `<span>Next Question</span><i data-lucide="chevron-right" class="w-4 h-4"></i>`;
+            }
+        }
+
     } else {
-        nextBtn.innerHTML = `<span>Next</span><i data-lucide="chevron-right" class="w-4 h-4"></i>`;
+        feedbackBox.classList.add("hidden");
+        if (checkBtn) {
+            checkBtn.classList.remove("hidden");
+            checkBtn.disabled = !userChoice;
+        }
+        if (nextBtn) {
+            nextBtn.className = "px-4 py-2 rounded-xl text-xs font-semibold bg-[#2a2a2a] hover:bg-[#333] border border-[#383838] text-neutral-300 transition flex items-center gap-1.5 cursor-pointer";
+            if (index === total - 1) {
+                nextBtn.innerHTML = `<span>Skip to Finish</span><i data-lucide="check" class="w-4 h-4"></i>`;
+            } else {
+                nextBtn.innerHTML = `<span>Skip Next</span><i data-lucide="chevron-right" class="w-4 h-4"></i>`;
+            }
+        }
+    }
+
+    const prevBtn = document.getElementById("quiz-prev-btn");
+    if (prevBtn) prevBtn.disabled = index === 0;
+
+    if (window.renderMathInElement) {
+        try {
+            renderMathInElement(document.getElementById("mcq-quiz-view"), {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false}
+                ],
+                throwOnError: false
+            });
+        } catch (e) {
+            console.warn("KaTeX render notice:", e);
+        }
     }
 
     lucide.createIcons();
 }
 
 function selectMcqOption(key) {
+    if (!mcqActiveQuiz || mcqSubmittedQuestions[mcqCurrentIndex]) return;
     mcqUserAnswers[mcqCurrentIndex] = key;
+    renderQuizQuestion(mcqCurrentIndex);
+}
+
+function submitCurrentQuestion() {
+    if (!mcqActiveQuiz) return;
+    if (!mcqUserAnswers[mcqCurrentIndex]) {
+        alert("Please select an option before checking your answer.");
+        return;
+    }
+    mcqSubmittedQuestions[mcqCurrentIndex] = true;
     renderQuizQuestion(mcqCurrentIndex);
 }
 
@@ -910,7 +1202,8 @@ function prevMcqQuestion() {
 }
 
 function nextMcqQuestion() {
-    const total = mcqActiveQuiz ? mcqActiveQuiz.questions.length : 0;
+    if (!mcqActiveQuiz) return;
+    const total = mcqActiveQuiz.questions.length;
     if (mcqCurrentIndex < total - 1) {
         mcqCurrentIndex++;
         renderQuizQuestion(mcqCurrentIndex);
@@ -937,6 +1230,13 @@ document.addEventListener("keydown", (e) => {
     else if (e.key === "2" || e.key.toUpperCase() === "B") selectMcqOption("B");
     else if (e.key === "3" || e.key.toUpperCase() === "C") selectMcqOption("C");
     else if (e.key === "4" || e.key.toUpperCase() === "D") selectMcqOption("D");
+    else if (e.key === "Enter") {
+        if (!mcqSubmittedQuestions[mcqCurrentIndex] && mcqUserAnswers[mcqCurrentIndex]) {
+            submitCurrentQuestion();
+        } else {
+            nextMcqQuestion();
+        }
+    }
     else if (e.key === "ArrowRight") nextMcqQuestion();
     else if (e.key === "ArrowLeft") prevMcqQuestion();
 });
@@ -944,24 +1244,27 @@ document.addEventListener("keydown", (e) => {
 function submitQuiz() {
     if (!mcqActiveQuiz) return;
     const total = mcqActiveQuiz.questions.length;
-    const answeredCount = Object.keys(mcqUserAnswers).length;
+    const answeredCount = Object.keys(mcqSubmittedQuestions).length;
 
     if (answeredCount < total) {
-        const confirmSubmit = confirm(`You have answered ${answeredCount} of ${total} questions. Do you want to submit and view your score now?`);
+        const confirmSubmit = confirm(`You have completed ${answeredCount} of ${total} questions. Do you want to finalize and view your score now?`);
         if (!confirmSubmit) return;
     }
 
-    // Stop timer
     clearInterval(quizTimerInterval);
     const mins = Math.floor(quizSecondsElapsed / 60);
     const secs = quizSecondsElapsed % 60;
     const timeFormatted = `${mins > 0 ? mins + 'm ' : ''}${secs}s`;
 
-    // Calculate score
     let correctCount = 0;
+    let mistakesCount = 0;
+
     mcqActiveQuiz.questions.forEach((q, idx) => {
-        if (mcqUserAnswers[idx] === q.correct_option) {
+        const correctKey = (q.correct_answer || q.correct_option || "").toUpperCase().trim();
+        if (mcqUserAnswers[idx] === correctKey) {
             correctCount++;
+        } else {
+            mistakesCount++;
         }
     });
 
@@ -971,26 +1274,72 @@ function submitQuiz() {
     document.getElementById("mcq-quiz-view").classList.add("hidden");
     document.getElementById("mcq-results-view").classList.remove("hidden");
 
-    // Score & Timing display
+    // Score & timing
     document.getElementById("results-score-text").innerText = `${correctCount} / ${total} (${scorePct}%)`;
 
     let feedback = "";
     if (scorePct >= 80) {
-        feedback = `🌟 ICAI Ranker Standard! Flawless conceptual mastery and precision (Completed in ${timeFormatted}).`;
+        feedback = `🌟 Ranker Standard! Exceptional conceptual mastery and precision (Completed in ${timeFormatted}).`;
     } else if (scorePct >= 60) {
         feedback = `🎉 Official Exam Pass Standard! Strong command with minor revisions needed (Completed in ${timeFormatted}).`;
     } else if (scorePct >= 40) {
-        feedback = `👍 Good Attempt! Review the detailed step-by-step working notes below to boost your score (Completed in ${timeFormatted}).`;
+        feedback = `👍 Good Attempt! Review the step-by-step working notes below to boost your score (Completed in ${timeFormatted}).`;
     } else {
-        feedback = `📚 Focus Needed! Thoroughly study the ICAI reasoning boxes below to master these concepts (Completed in ${timeFormatted}).`;
+        feedback = `📚 Focus Needed! Thoroughly study the reasoning boxes below to master these concepts (Completed in ${timeFormatted}).`;
     }
     document.getElementById("results-feedback-text").innerText = feedback;
 
-    // Detailed Breakdown List
-    const breakdownContainer = document.getElementById("results-breakdown-list");
-    breakdownContainer.innerHTML = mcqActiveQuiz.questions.map((q, idx) => {
+    // Filter counts
+    const totalCountElem = document.getElementById("results-total-count");
+    if (totalCountElem) totalCountElem.innerText = String(total);
+    const mistakesCountElem = document.getElementById("results-mistakes-count");
+    if (mistakesCountElem) mistakesCountElem.innerText = String(mistakesCount);
+
+    mcqResultsFilter = 'all';
+    renderResultsBreakdown();
+}
+
+function filterResults(filterType) {
+    mcqResultsFilter = filterType;
+    const allBtn = document.getElementById("filter-all-btn");
+    const mistakesBtn = document.getElementById("filter-mistakes-btn");
+
+    if (filterType === 'all') {
+        if (allBtn) allBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 transition cursor-pointer";
+        if (mistakesBtn) mistakesBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-[#303030] text-neutral-300 hover:text-white border border-[#404040] transition cursor-pointer";
+    } else {
+        if (mistakesBtn) mistakesBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 transition cursor-pointer";
+        if (allBtn) allBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-[#303030] text-neutral-300 hover:text-white border border-[#404040] transition cursor-pointer";
+    }
+    renderResultsBreakdown();
+}
+
+function renderResultsBreakdown() {
+    if (!mcqActiveQuiz) return;
+    const container = document.getElementById("results-breakdown-list");
+    if (!container) return;
+
+    const filteredQuestions = mcqActiveQuiz.questions.map((q, idx) => ({ q, idx })).filter(({ q, idx }) => {
+        if (mcqResultsFilter === 'all') return true;
+        const correctKey = (q.correct_answer || q.correct_option || "").toUpperCase().trim();
+        return mcqUserAnswers[idx] !== correctKey;
+    });
+
+    if (filteredQuestions.length === 0) {
+        container.innerHTML = `
+            <div class="p-8 text-center bg-[#242424] border border-[#383838] rounded-2xl space-y-2">
+                <div class="text-3xl">🎉</div>
+                <h4 class="text-sm font-bold text-white">No Mistakes Found!</h4>
+                <p class="text-xs text-neutral-400">You answered all questions correctly in this practice session.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filteredQuestions.map(({ q, idx }) => {
+        const correctKey = (q.correct_answer || q.correct_option || "").toUpperCase().trim();
         const userChoice = mcqUserAnswers[idx];
-        const isCorrect = userChoice === q.correct_option;
+        const isCorrect = userChoice === correctKey;
         const isAnswered = Boolean(userChoice);
 
         let statusBadge = "";
@@ -1010,7 +1359,7 @@ function submitQuiz() {
         const optionKeys = ["A", "B", "C", "D"];
         const optionsHtml = optionKeys.map(k => {
             const optText = cleanExamMarkdown(q.options[k] || "");
-            const isThisCorrect = k === q.correct_option;
+            const isThisCorrect = k === correctKey;
             const isThisUserWrong = userChoice === k && !isCorrect;
 
             let optStyle = "bg-[#252525] border-[#353535] text-neutral-300";
@@ -1033,13 +1382,12 @@ function submitQuiz() {
             `;
         }).join("");
 
-        // Explanation text cleaned of any LaTeX/math glitches
         const cleanedExplanation = cleanExamMarkdown(q.explanation || "");
 
         return `
             <div class="bg-[#212121] border ${borderClass} rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-md mcq-review-item">
                 <div class="flex items-center justify-between gap-2 border-b border-[#2e2e2e] pb-2.5">
-                    <span class="text-xs font-bold text-white uppercase tracking-wider">Question ${idx + 1} of ${total}</span>
+                    <span class="text-xs font-bold text-white uppercase tracking-wider">Question ${idx + 1} of ${mcqActiveQuiz.questions.length}</span>
                     ${statusBadge}
                 </div>
 
@@ -1055,13 +1403,27 @@ function submitQuiz() {
                 <div class="mt-3 p-3.5 sm:p-4 rounded-xl bg-[#142314] border border-emerald-500/40 text-emerald-100 text-xs sm:text-sm space-y-1.5 mcq-review-item shadow-inner">
                     <p class="font-bold flex items-center gap-1.5 text-emerald-300 text-xs uppercase tracking-wide">
                         <i data-lucide="lightbulb" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
-                        <span>ICAI-Style Reasoning & Solution</span>
+                        <span>Reasoning & Working Solution</span>
                     </p>
-                    <p class="mcq-reasoning-box text-emerald-100/95">${escapeHtml(cleanedExplanation)}</p>
+                    <p class="mcq-reasoning-box text-emerald-100/95 leading-relaxed">${escapeHtml(cleanedExplanation)}</p>
                 </div>
             </div>
         `;
     }).join("");
+
+    if (window.renderMathInElement) {
+        try {
+            renderMathInElement(container, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false}
+                ],
+                throwOnError: false
+            });
+        } catch (e) {
+            console.warn("KaTeX render notice:", e);
+        }
+    }
 
     lucide.createIcons();
 }

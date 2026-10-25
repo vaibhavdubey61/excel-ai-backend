@@ -4,6 +4,7 @@ import base64
 import re
 from typing import Dict, Any, List, Optional
 import httpx
+from pydantic import BaseModel, Field, field_validator
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -70,20 +71,135 @@ EXAM PRESENTATION STANDARDS:
 
 CRITICAL INSTRUCTIONS:
 - Answer with absolute authority, warmth, and precision like a senior faculty member.
-- Do NOT mention internal file names, document paths, or say "According to the study material" or "Based on the uploaded PDF". Deliver the answer directly as authoritative exam knowledge.
+- Never mention files, excerpts, retrieval, or sources in your response. Answer as an authoritative coach.
 - Keep formatting clean, modern, and readable with bold highlights and bullet points.
 """
 
+def clean_exam_math(text: str) -> str:
+    """
+    Strips raw LaTeX math syntax and converts formulas into clean, readable commerce examination notation.
+    E.g. r'($\text{SP} \times [\text{SQ} - \text{AQ}])$' -> '(SP × [SQ - AQ])'
+    """
+    if not text:
+        return ""
+    s = text
+    # Clean LaTeX spacing
+    s = re.sub(r'\\(quad|qquad|\s+|,|;|!)', ' ', s)
+    # Clean \text{...} wrappers repeatedly
+    for _ in range(3):
+        s = re.sub(r'\\text\{([^{}]*)\}', r'\1', s)
+    # Common math symbols
+    s = re.sub(r'\\times\b', '×', s)
+    s = re.sub(r'\\cdot\b', '·', s)
+    s = re.sub(r'\\div\b', '÷', s)
+    s = re.sub(r'\\pm\b', '±', s)
+    s = re.sub(r'\\(leq|le)\b', '≤', s)
+    s = re.sub(r'\\(geq|ge)\b', '≥', s)
+    s = re.sub(r'\\(neq|ne)\b', '≠', s)
+    s = re.sub(r'\\approx\b', '≈', s)
+    # Clean fractions \frac{a}{b} -> (a / b)
+    s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1 / \2)', s)
+    # Clean \left and \right delimiters
+    s = re.sub(r'\\left\s*([(\[{|])', r'\1', s)
+    s = re.sub(r'\\right\s*([)\]}|])', r'\1', s)
+    # Strip $$ and $ wrappers
+    s = re.sub(r'\$\$([\s\S]*?)\$\$', r'\1', s)
+    s = re.sub(r'\$([^\$\n]+)\$', r'\1', s)
+    # Remove lingering backslashes before brackets
+    s = s.replace(r'\[', '[').replace(r'\]', ']').replace(r'\(', '(').replace(r'\)', ')')
+    # Clean unescaped remaining single $
+    s = re.sub(r'\$([A-Za-z0-9_\[\]\(\)\s+\-*\/=]+)\$', r'\1', s)
+    # Clean double spaces
+    s = re.sub(r'[ \t]{2,}', ' ', s)
+    return s.strip()
+
+class MCQQuestion(BaseModel):
+    id: Optional[int] = None
+    question: str
+    options: Dict[str, str]
+    correct_answer: str
+    correct_option: Optional[str] = None
+    explanation: str
+    topic: Optional[str] = None
+
+    @field_validator("correct_answer", mode="before")
+    @classmethod
+    def validate_correct_answer(cls, v: Any) -> str:
+        s = str(v).strip().upper()
+        if s.startswith("OPTION"):
+            s = s.replace("OPTION", "").strip()
+        s = s.strip("():. ")
+        if s not in ["A", "B", "C", "D"]:
+            for opt in ["A", "B", "C", "D"]:
+                if opt in s:
+                    return opt
+            raise ValueError(f"Invalid correct_answer '{v}'; must be 'A', 'B', 'C', or 'D'")
+        return s
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def validate_options(cls, v: Any) -> Dict[str, str]:
+        if not isinstance(v, dict):
+            raise ValueError("options must be a dictionary with keys A, B, C, D")
+        cleaned = {}
+        for key in ["A", "B", "C", "D"]:
+            val = v.get(key) if key in v else v.get(key.lower())
+            if val is None:
+                raise ValueError(f"Missing option '{key}' in options dict")
+            cleaned[key] = clean_exam_math(str(val).strip())
+        return cleaned
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.correct_option:
+            self.correct_option = self.correct_answer
+        self.question = clean_exam_math(self.question)
+        self.explanation = clean_exam_math(self.explanation)
+
+
+def clean_student_reply(text: str) -> str:
+    """Ensures no internal retrieval labels, NOT_IN_MATERIAL, or source disclaimers leak to students, and cleans math syntax."""
+    if not text:
+        return ""
+    text = text.replace("NOT_IN_MATERIAL", "").strip()
+    text = clean_exam_math(text)
+    lines = text.split("\n")
+    cleaned_lines = []
+    for line in lines:
+        l_lower = line.lower().strip()
+        if (
+            l_lower.startswith("source:") or
+            l_lower.startswith("sources:") or
+            l_lower.startswith("reference:") or
+            l_lower.startswith("references:") or
+            l_lower.startswith("score:") or
+            l_lower.startswith("top score:") or
+            l_lower.startswith("according to the study material") or
+            l_lower.startswith("according to study material") or
+            l_lower.startswith("according to the excerpt") or
+            l_lower.startswith("as per the study material") or
+            l_lower.startswith("as per study material") or
+            l_lower.startswith("based on general knowledge") or
+            l_lower.startswith("from the study material") or
+            l_lower.startswith("from study material") or
+            ("from general knowledge" in l_lower and len(l_lower) < 60)
+        ):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
 CANDIDATE_MODELS = [
-    "gemini-flash-lite-latest",
     "gemini-flash-latest",
-    "gemini-pro-latest"
+    "gemini-pro-latest",
+    "gemini-flash-lite-latest"
 ]
 
 class AIService:
+    CANDIDATE_MODELS = CANDIDATE_MODELS
+
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         self.models = CANDIDATE_MODELS
+        self.last_model_used: str = CANDIDATE_MODELS[0]
 
     def set_api_key(self, key: str):
         self.api_key = key.strip()
@@ -91,70 +207,188 @@ class AIService:
     def has_api_key(self) -> bool:
         return bool(self.api_key and len(self.api_key) > 10)
 
+    async def extract_question_from_image(self, image_base64: str, mime_type: str = "image/jpeg") -> str:
+        """Fast Gemini call to transcribe the question or problem from an image."""
+        if not self.has_api_key():
+            return ""
+        prompt = "Extract and transcribe the main question, problem statement, or doubt shown in this image. Output only the plain text question without commentary."
+        images = [{"mime_type": mime_type, "data": image_base64}]
+        try:
+            res = await self._call_gemini_api(prompt, images=images, max_tokens=1024)
+            return res.strip()
+        except Exception as e:
+            print(f"[Image Text Extraction Error]: {e}")
+            return ""
+
     async def get_response(
         self,
         message: str,
         image_base64: Optional[str] = None,
         mime_type: str = "image/jpeg",
-        context_chunks: Optional[List[Dict[str, Any]]] = None
-    ) -> str:
-        """Single unified method for doubts, evaluations, and queries."""
-        # 1. Build background context silently
-        knowledge_context = ""
-        if context_chunks:
-            knowledge_context = "\n\n[Background Reference Material]:\n"
-            for c in context_chunks:
-                knowledge_context += f"{c['content']}\n\n"
+        context_chunks: Optional[List[Dict[str, Any]]] = None,
+        course: str = "CA",
+        level: str = "Inter",
+        history: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Level-aware answer generation with Grounded -> NOT_IN_MATERIAL -> General Knowledge fallback.
+        Returns dict: {"reply": str, "source": "material" | "general", "top_score": float, "model_used": str}.
+        """
+        if not self.has_api_key():
+            raise Exception("GEMINI_API_KEY is not configured.")
 
-        prompt = f"""Student Query:
-{message if message else 'Please review and evaluate the attached submission.'}
-{knowledge_context}
+        top_score = max([c.get("score", 0.0) for c in (context_chunks or [])], default=0.0)
+
+        # 1. Format conversation history (last 6 turns)
+        history_text = ""
+        if history:
+            history_text = "\n[Recent Conversation History]:\n"
+            for h in history[-6:]:
+                role_label = "Student" if h.get("role") in ["user", "student"] else "Coach"
+                msg_body = h.get("text") or h.get("content") or ""
+                if msg_body:
+                    history_text += f"{role_label}: {msg_body}\n"
+            history_text += "\n"
+
+        level_context = f"""STUDENT LEVEL: The student is preparing for {course} {level}. Answer strictly within this level's syllabus, depth and exam pattern. Do not use concepts from higher levels unless asked.
+COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a clarifying question and never end with an offer to continue. If the question is ambiguous, state one assumption in a line and answer fully. For numericals show the full solution with working notes from start to final answer."""
+
+        images = []
+        if image_base64:
+            images.append({
+                "mime_type": mime_type,
+                "data": image_base64
+            })
+
+        user_query = message.strip() if message else "Please evaluate this student submission."
+
+        # STEP 1: Grounded answer from study material excerpts if available
+        if context_chunks and len(context_chunks) > 0:
+            excerpts_text = "\n\n".join([f"--- Excerpt {idx+1} ({c.get('section', '')}) ---\n{c.get('content', '')}" for idx, c in enumerate(context_chunks)])
+
+            grounded_system = f"""{SYSTEM_PROMPT}
+
+{level_context}
+
+GROUNDED RULES:
+- Use ONLY the excerpts provided below. Do not add sections, rates, limits or figures not in them.
+- If the excerpts do not fully answer the question, output exactly NOT_IN_MATERIAL.
+- If the excerpts DO answer the question, provide a complete, comprehensive, and definitive exam-standard solution in ONE response.
+- Complete answers in ONE response: the student must never need to say 'continue' or re-ask.
+- Never mention files, excerpts, retrieval, or sources in your response. Answer as an authoritative coach.
 """
 
-        # 2. Call live Gemini with multi-model fallback
-        if self.has_api_key():
+            grounded_prompt = f"""{history_text}[Uploaded Institute Study Material Excerpts]:
+{excerpts_text}
+
+Student Query:
+{user_query}
+"""
             try:
-                images = []
-                if image_base64:
-                    images.append({
-                        "mime_type": mime_type,
-                        "data": image_base64
-                    })
-                return await self._call_gemini_api(prompt, images=images, system_instruction=SYSTEM_PROMPT)
+                raw_reply = await self._call_gemini_api(
+                    grounded_prompt,
+                    images=images,
+                    system_instruction=grounded_system,
+                    max_tokens=8192
+                )
+                clean_reply = raw_reply.strip()
+                # Check if Gemini output NOT_IN_MATERIAL
+                if clean_reply.startswith("NOT_IN_MATERIAL") or clean_reply == "NOT_IN_MATERIAL":
+                    print("[Grounded Check]: Excerpts do not cover query (NOT_IN_MATERIAL). Falling back to general knowledge.")
+                else:
+                    return {
+                        "reply": clean_student_reply(clean_reply),
+                        "source": "material",
+                        "top_score": float(top_score),
+                        "model_used": self.last_model_used
+                    }
             except Exception as e:
-                print(f"[Gemini Multi-Model Fallback Triggered]: {e}")
-                return self._simulate_response(message, bool(image_base64))
-        else:
-            return self._simulate_response(message, bool(image_base64))
+                print(f"[Grounded call notice]: {e}. Proceeding to general knowledge fallback.")
+
+        # STEP 2: General Knowledge Fallback
+        general_system = f"""{SYSTEM_PROMPT}
+
+{level_context}
+
+GENERAL KNOWLEDGE RULES:
+- Answer the student's doubt thoroughly, authoritatively, and completely in ONE response using standard {course} {level} statutory provisions and exam concepts.
+- Complete answers in ONE response: the student must never need to say 'continue' or re-ask.
+- Do NOT print any disclaimer or source text in the student-facing answer (never say 'Based on general knowledge' or 'From the study material').
+- Never mention files, excerpts, retrieval, or sources in your response. Answer as an authoritative coach.
+"""
+
+        general_prompt = f"""{history_text}Student Query:
+{user_query}
+"""
+
+        raw_reply = await self._call_gemini_api(
+            general_prompt,
+            images=images,
+            system_instruction=general_system,
+            max_tokens=8192
+        )
+
+        return {
+            "reply": clean_student_reply(raw_reply),
+            "source": "general",
+            "top_score": float(top_score),
+            "model_used": self.last_model_used
+        }
 
     async def generate_interactive_mcqs(
         self,
-        topic: str = "Random",
+        course: str = "CA",
+        level: str = "Inter",
+        subject: Optional[str] = None,
+        topic: Optional[str] = "Random",
         count: int = 10,
-        level: str = "CA_Inter"
+        chunks: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
-        """Generates structured interactive MCQs with options, hidden answers, and brief reasoning."""
+        """
+        Generates structured interactive MCQs with options, hidden answers, and brief reasoning.
+        Validates schema with Pydantic and retries once with a corrective prompt on malformed JSON.
+        """
+        if not self.has_api_key():
+            raise Exception("GEMINI_API_KEY is not configured.")
+
+        count = max(1, min(int(count or 10), 20))
         is_random = not topic or topic.strip().lower() in ["random", "all", "mixed"]
         effective_topic = (
-            "Mixed Commerce Exam Syllabus (Income Tax, GST, Corporate Law, Cost & Management Accounting, Auditing & Ethics, Partnership)"
+            f"Mixed {course} {level} Exam Syllabus"
             if is_random
             else topic.strip()
         )
+        if subject and subject.strip().lower() not in ["all", "all subjects", "general"]:
+            effective_subject = subject.strip()
+        else:
+            effective_subject = f"{course} {level} Syllabus"
 
-        prompt = f"""Generate exactly {count} exam-level Multiple Choice Questions (MCQs) for {level} commerce examination on the topic: "{effective_topic}".
+        has_material = bool(chunks and len(chunks) > 0)
+        source = "material" if has_material else "general"
+
+        if has_material:
+            excerpts = []
+            for i, c in enumerate(chunks[:5]):
+                prefix = f"[{c.get('subject', '')} | {c.get('doc_name', '')} | Page {c.get('section', '')}]"
+                excerpts.append(f"--- EXCERPT {i+1} {prefix} ---\n{c.get('content', '')}")
+            excerpts_str = "\n\n".join(excerpts)
+
+            prompt = f"""Generate exactly {count} multiple choice questions using ONLY the excerpts. Do not invent facts, sections, or figures not in the text.
+STUDENT LEVEL: The student is preparing for {course} {level}.
+Subject: {effective_subject}
+Topic: {effective_topic}
+
+STUDY MATERIAL EXCERPTS:
+{excerpts_str}
 
 CRITICAL REQUIREMENTS:
-1. Provide realistic exam questions conforming to official ICAI / ICSI standards.
+1. Provide realistic exam questions conforming to official {course} {level} standards.
 2. For each question, provide exactly 4 distinct options labeled "A", "B", "C", and "D".
-3. Provide the single correct option key ("A", "B", "C", or "D").
-4. Provide a brief, authoritative explanation (2 to 3 sentences) citing relevant section numbers, accounting standards, or step-by-step working calculations.
-5. NO LaTeX math notation (NO $$, $, \\text{{}}, \\times). Use clean readable characters: ×, ÷, ₹, ( ), [ ].
-6. NEVER include internal scratchpad hesitation, self-correction monologue, or reasoning trail.
-7. Return STRICT JSON ONLY without markdown code fences or backticks matching this schema:
-
+3. Provide the single correct option key in "correct_answer": "A", "B", "C", or "D".
+4. Provide a brief, authoritative explanation (2 to 3 sentences) citing relevant section numbers, accounting standards, or step-by-step working calculations from the text.
+5. NO LaTeX math notation (NO $$, $, \\text{{}}, \\times, \\frac). Use clean readable exam notation: ×, ÷, ₹, ( ), [ ], /, +, -.
+6. Return STRICT JSON ONLY with the following schema:
 {{
-  "topic": "{effective_topic}",
-  "total_questions": {count},
   "questions": [
     {{
       "id": 1,
@@ -165,43 +399,135 @@ CRITICAL REQUIREMENTS:
         "C": "Option C text",
         "D": "Option D text"
       }},
-      "correct_option": "B",
-      "explanation": "Brief ICAI reasoning explaining why B is correct..."
+      "correct_answer": "A",
+      "explanation": "Brief reasoning explaining why A is correct..."
     }}
   ]
 }}
 """
-        if self.has_api_key():
-            try:
-                raw_text = await self._call_gemini_api(
-                    prompt,
-                    system_instruction="You are a senior ICAI exam paper setter. Output valid JSON only, without any markdown formatting or commentary.",
-                    max_tokens=4096
-                )
-                clean_json_str = raw_text.strip()
-                if clean_json_str.startswith("```json"):
-                    clean_json_str = clean_json_str[7:]
-                elif clean_json_str.startswith("```"):
-                    clean_json_str = clean_json_str[3:]
-                if clean_json_str.endswith("```"):
-                    clean_json_str = clean_json_str[:-3]
-                clean_json_str = clean_json_str.strip()
+        else:
+            prompt = f"""Generate exactly {count} exam-level Multiple Choice Questions (MCQs) for {course} {level} examination.
+STUDENT LEVEL: The student is preparing for {course} {level}. Answer strictly within this level's syllabus, depth and exam pattern.
+Subject: {effective_subject}
+Topic: {effective_topic}
 
-                data = json.loads(clean_json_str)
-                if "questions" in data and len(data["questions"]) > 0:
-                    return data
-            except Exception as e:
-                print(f"[MCQ Generation Error]: {e}")
+CRITICAL REQUIREMENTS:
+1. Provide realistic exam questions conforming to official {course} {level} standards.
+2. For each question, provide exactly 4 distinct options labeled "A", "B", "C", and "D".
+3. Provide the single correct option key in "correct_answer": "A", "B", "C", or "D".
+4. Provide a brief, authoritative explanation (2 to 3 sentences) citing relevant section numbers, accounting standards, or step-by-step working calculations.
+5. NO LaTeX math notation (NO $$, $, \\text{{}}, \\times, \\frac). Use clean readable exam notation: ×, ÷, ₹, ( ), [ ], /, +, -.
+6. Return STRICT JSON ONLY with the following schema:
+{{
+  "questions": [
+    {{
+      "id": 1,
+      "question": "Question text...",
+      "options": {{
+        "A": "Option A text",
+        "B": "Option B text",
+        "C": "Option C text",
+        "D": "Option D text"
+      }},
+      "correct_answer": "B",
+      "explanation": "Brief reasoning explaining why B is correct..."
+    }}
+  ]
+}}
+"""
 
-        # Fallback offline MCQs
-        return self._simulate_mcq_data(effective_topic, count)
+        system_inst = "You are a senior exam paper setter. Output valid JSON only, without any markdown formatting or commentary."
+
+        def parse_and_validate(raw_text: str) -> List[MCQQuestion]:
+            clean_str = raw_text.strip()
+            if clean_str.startswith("```json"):
+                clean_str = clean_str[7:]
+            elif clean_str.startswith("```"):
+                clean_str = clean_str[3:]
+            if clean_str.endswith("```"):
+                clean_str = clean_str[:-3]
+            clean_str = clean_str.strip()
+
+            parsed = json.loads(clean_str)
+            raw_list = parsed.get("questions") if isinstance(parsed, dict) else parsed
+            if not isinstance(raw_list, list) or len(raw_list) == 0:
+                raise ValueError("JSON response does not contain a valid list of questions.")
+
+            validated: List[MCQQuestion] = []
+            for item in raw_list:
+                if not isinstance(item, dict):
+                    continue
+                # Support both correct_answer and correct_option
+                if "correct_answer" not in item and "correct_option" in item:
+                    item["correct_answer"] = item["correct_option"]
+                q_obj = MCQQuestion(**item)
+                validated.append(q_obj)
+            if not validated:
+                raise ValueError("No valid questions parsed from JSON.")
+            return validated
+
+        # Attempt 1
+        raw_output = await self._call_gemini_api(
+            prompt,
+            system_instruction=system_inst,
+            max_tokens=8192,
+            json_mode=True
+        )
+
+        validated_questions: List[MCQQuestion] = []
+        try:
+            validated_questions = parse_and_validate(raw_output)
+        except Exception as first_err:
+            print(f"[MCQ Parse Attempt 1 Failed]: {first_err}. Retrying with corrective prompt...")
+            corrective_prompt = (
+                f"{prompt}\n\n"
+                f"CORRECTION REQUIRED: Your previous response failed validation: {str(first_err)}.\n"
+                f"Please regenerate strictly valid JSON containing a 'questions' array. Each question must include:\n"
+                f"- 'question': string\n"
+                f"- 'options': dict with keys 'A', 'B', 'C', 'D'\n"
+                f"- 'correct_answer': 'A', 'B', 'C', or 'D'\n"
+                f"- 'explanation': string\n"
+            )
+            raw_output_retry = await self._call_gemini_api(
+                corrective_prompt,
+                system_instruction=system_inst,
+                max_tokens=8192,
+                json_mode=True
+            )
+            validated_questions = parse_and_validate(raw_output_retry)
+
+        # Deduplication & Re-indexing
+        seen_questions = set()
+        final_questions: List[Dict[str, Any]] = []
+        for q in validated_questions:
+            norm_q = re.sub(r'[^a-zA-Z0-9]', '', q.question.lower())
+            if norm_q in seen_questions:
+                continue
+            seen_questions.add(norm_q)
+            q_dict = q.model_dump()
+            q_dict["id"] = len(final_questions) + 1
+            final_questions.append(q_dict)
+
+        if not final_questions:
+            raise Exception("MCQ generation failed to produce any valid, unique questions.")
+
+        return {
+            "topic": effective_topic,
+            "subject": effective_subject,
+            "course": course,
+            "level": level,
+            "total_questions": len(final_questions),
+            "questions": final_questions,
+            "source": source
+        }
 
     async def _call_gemini_api(
         self,
         prompt: str,
         images: Optional[List[Dict[str, str]]] = None,
         system_instruction: str = "",
-        max_tokens: int = 2048
+        max_tokens: int = 8192,
+        json_mode: bool = False
     ) -> str:
         """Calls Gemini with rapid fallback across candidate models to avoid 503 capacity limits."""
         parts: List[Dict[str, Any]] = []
@@ -215,12 +541,16 @@ CRITICAL REQUIREMENTS:
                 })
         parts.append({"text": prompt})
 
+        gen_config: Dict[str, Any] = {
+            "temperature": 0.2,
+            "maxOutputTokens": max_tokens,
+        }
+        if json_mode:
+            gen_config["responseMimeType"] = "application/json"
+
         payload: Dict[str, Any] = {
             "contents": [{"parts": parts}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "maxOutputTokens": max_tokens,
-            }
+            "generationConfig": gen_config
         }
 
         if system_instruction:
@@ -232,11 +562,28 @@ CRITICAL REQUIREMENTS:
         for model in self.models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
             try:
-                async with httpx.AsyncClient(timeout=12.0) as client:
+                async with httpx.AsyncClient(timeout=45.0) as client:
                     resp = await client.post(url, json=payload)
                     if resp.status_code == 200:
                         result = resp.json()
-                        return result["candidates"][0]["content"]["parts"][0]["text"]
+                        candidates = result.get("candidates", [])
+                        if not candidates:
+                            last_error = f"Model {model} returned no candidates"
+                            print(f"[{model} unavailable]: {last_error}")
+                            continue
+
+                        cand = candidates[0]
+                        cand_parts = cand.get("content", {}).get("parts", [])
+                        full_text = "".join(p.get("text", "") for p in cand_parts)
+                        finish_reason = cand.get("finishReason", "UNKNOWN")
+
+                        if not full_text.strip():
+                            print(f"[{model} returned empty text, finishReason={finish_reason}]. Trying next model...")
+                            last_error = f"Model {model} returned empty text (finishReason={finish_reason})"
+                            continue
+
+                        self.last_model_used = model
+                        return full_text
                     else:
                         last_error = f"Model {model} returned HTTP {resp.status_code}: {resp.text[:100]}"
                         print(f"[{model} unavailable]: {last_error}")
@@ -245,260 +592,3 @@ CRITICAL REQUIREMENTS:
                 print(f"[{model} failed]: {err}")
 
         raise Exception(f"All Gemini models exhausted. Last error: {last_error}")
-
-    def _simulate_mcq_data(self, topic: str, count: int) -> Dict[str, Any]:
-        """Provides high-quality offline MCQs across commerce subjects with zero LaTeX errors."""
-        all_pool = [
-            {
-                "id": 1,
-                "question": "A manufacturing unit has budgeted standard labor hours of 5,000 hrs at ₹60/hr. In January, actual hours worked were 4,800 hrs at ₹65/hr. What is the Labour Rate Variance (LRV)?",
-                "options": {
-                    "A": "₹24,000 (Favourable)",
-                    "B": "₹24,000 (Adverse)",
-                    "C": "₹12,000 (Adverse)",
-                    "D": "₹10,000 (Favourable)"
-                },
-                "correct_option": "B",
-                "explanation": "Labour Rate Variance (LRV) = Actual Hours × (Standard Rate - Actual Rate) = 4,800 hrs × (₹60 - ₹65) = 4,800 × (-₹5) = ₹24,000 (Adverse). Because the actual hourly rate paid (₹65) exceeds standard (₹60), the variance is adverse."
-            },
-            {
-                "id": 2,
-                "question": "Under Section 115BAC of the Income Tax Act, 1961 (Default Tax Regime for AY 2025-26), what is the maximum rebate available under Section 87A for a resident individual?",
-                "options": {
-                    "A": "₹12,500",
-                    "B": "₹25,000",
-                    "C": "₹37,500",
-                    "D": "Rebate is not allowed"
-                },
-                "correct_option": "B",
-                "explanation": "Under Section 115BAC, resident individuals having total income up to ₹7,00,000 are eligible for tax rebate up to ₹25,000 under Section 87A, resulting in Nil tax liability."
-            },
-            {
-                "id": 3,
-                "question": "What is the statutory ceiling on the buy-back of equity shares in any financial year under Section 68(2)(c) of the Companies Act, 2013?",
-                "options": {
-                    "A": "10% of total paid-up equity capital",
-                    "B": "25% of total paid-up equity capital",
-                    "C": "25% of aggregate paid-up capital and free reserves",
-                    "D": "50% of free reserves"
-                },
-                "correct_option": "B",
-                "explanation": "Under Section 68(2)(c) of Companies Act, 2013, the buy-back of equity shares in any financial year shall not exceed 25% of its total paid-up equity capital in that financial year."
-            },
-            {
-                "id": 4,
-                "question": "Under Section 16(2) of the CGST Act, 2017, what is the maximum time limit for a recipient to pay the supplier, failing which Input Tax Credit (ITC) availed must be reversed with interest?",
-                "options": {
-                    "A": "90 days from the date of invoice",
-                    "B": "180 days from the date of invoice",
-                    "C": "1 year from the date of invoice",
-                    "D": "No time limit if invoice is genuine"
-                },
-                "correct_option": "B",
-                "explanation": "Second proviso to Section 16(2) of the CGST Act mandates that if the recipient fails to pay the supplier the value of supply plus tax within 180 days from invoice date, the ITC availed must be added to output tax liability along with interest."
-            },
-            {
-                "id": 5,
-                "question": "According to SA 705 (Revised), what type of audit opinion should the statutory auditor issue when misstatements are both material AND pervasive to the financial statements?",
-                "options": {
-                    "A": "Qualified Opinion",
-                    "B": "Adverse Opinion",
-                    "C": "Disclaimer of Opinion",
-                    "D": "Unmodified Opinion with Emphasis of Matter"
-                },
-                "correct_option": "B",
-                "explanation": "Under SA 705 (Modifications to the Opinion in the Independent Auditor's Report), an Adverse Opinion is issued when the auditor obtains sufficient appropriate audit evidence and concludes that misstatements, individually or in the aggregate, are both material and pervasive."
-            },
-            {
-                "id": 6,
-                "question": "A and B are partners sharing profits and losses in the ratio 5:3. They admit C and agree to give him 3/10th share of the total profit. What is the new profit-sharing ratio of A, B, and C?",
-                "options": {
-                    "A": "35:42:17",
-                    "B": "35:21:24",
-                    "C": "49:22:29",
-                    "D": "25:15:20"
-                },
-                "correct_option": "B",
-                "explanation": "Total profit = 1. Remaining share = 1 - 3/10 = 7/10. A's new share = 7/10 × 5/8 = 35/80. B's new share = 7/10 × 3/8 = 21/80. C's share = 3/10 = 24/80. New ratio = 35 : 21 : 24."
-            },
-            {
-                "id": 7,
-                "question": "A company sells a product at ₹100 per unit. Variable cost is ₹60 per unit and fixed overheads amount to ₹2,00,000 per annum. What is the Break-Even Point (BEP) in sales revenue?",
-                "options": {
-                    "A": "₹3,33,333",
-                    "B": "₹5,00,000",
-                    "C": "₹6,00,000",
-                    "D": "₹4,00,000"
-                },
-                "correct_option": "B",
-                "explanation": "Contribution per unit = ₹100 - ₹60 = ₹40. P/V Ratio = (₹40 / ₹100) × 100 = 40%. Break-Even Sales = Fixed Cost / P/V Ratio = ₹2,00,000 / 0.40 = ₹5,00,000."
-            },
-            {
-                "id": 8,
-                "question": "Under Section 135(1) of the Companies Act, 2013, which of the following is a mandatory qualifying threshold for a company to constitute a Corporate Social Responsibility (CSR) Committee?",
-                "options": {
-                    "A": "Turnover of ₹500 Crore or more",
-                    "B": "Net Worth of ₹500 Crore or more",
-                    "C": "Paid-up Share Capital of ₹100 Crore or more",
-                    "D": "Net Profit of ₹10 Crore or more"
-                },
-                "correct_option": "B",
-                "explanation": "Under Section 135(1), the CSR threshold triggers if Net Worth >= ₹500 Crore, Turnover >= ₹1,000 Crore, or Net Profit >= ₹5 Crore during the immediately preceding financial year."
-            },
-            {
-                "id": 9,
-                "question": "In working capital management, if raw material storage period is 30 days, WIP conversion period is 15 days, finished goods holding period is 20 days, debtors collection period is 25 days, and creditors payment period is 35 days, what is the Net Operating Cycle?",
-                "options": {
-                    "A": "90 days",
-                    "B": "55 days",
-                    "C": "125 days",
-                    "D": "65 days"
-                },
-                "correct_option": "B",
-                "explanation": "Gross Operating Cycle = 30 + 15 + 20 + 25 = 90 days. Net Operating Cycle = Gross Operating Cycle - Creditors Payment Period = 90 - 35 = 55 days."
-            },
-            {
-                "id": 10,
-                "question": "Under the new default tax regime (Section 115BAC) for Assessment Year 2025-26, what is the standard deduction allowed under Section 16(ia) to a salaried individual?",
-                "options": {
-                    "A": "₹50,000",
-                    "B": "₹75,000",
-                    "C": "₹1,00,000",
-                    "D": "Standard deduction is not permitted"
-                },
-                "correct_option": "B",
-                "explanation": "Under Section 16(ia) as amended for AY 2025-26 under the default tax regime (Section 115BAC), salaried employees and pensioners are entitled to a standard deduction of ₹75,000 (increased from ₹50,000)."
-            },
-            {
-                "id": 11,
-                "question": "According to Accounting Standard 2 (AS 2 - Revised), inventories must be valued at:",
-                "options": {
-                    "A": "Historical Cost only",
-                    "B": "Net Realizable Value only",
-                    "C": "Lower of Cost and Net Realizable Value",
-                    "D": "Replacement Cost"
-                },
-                "correct_option": "C",
-                "explanation": "Paragraph 5 of AS 2 mandates that inventories should be valued at the lower of historical cost and net realizable value (NRV) determined on an item-by-item basis."
-            },
-            {
-                "id": 12,
-                "question": "Under Section 2(d) of the Indian Contract Act, 1872, valid consideration:",
-                "options": {
-                    "A": "Must move from the promisee only",
-                    "B": "May move from the promisee or any other person",
-                    "C": "Must be adequate in monetary terms",
-                    "D": "Cannot be past consideration"
-                },
-                "correct_option": "B",
-                "explanation": "Under Indian law (Chinnaya v. Ramayya), consideration may move from the promisee or any other third person, provided it is at the desire of the promisor."
-            }
-        ]
-        return {
-            "topic": topic,
-            "total_questions": min(count, len(all_pool)),
-            "questions": all_pool[:count]
-        }
-
-    def _simulate_response(self, message: str, has_image: bool) -> str:
-        """Intelligent offline fallback response adhering strictly to exam standards."""
-        msg_lower = (message or "").lower()
-
-        # If student submitted an image to check/evaluate
-        if has_image or "check" in msg_lower or "evaluate" in msg_lower:
-            return """### 🏆 Score: 7.5 / 10 Marks
-
-#### 1. Step-Wise Marks Breakdown
-- **Applicable Legal Provisions / Accounting Standards**: **2.5 / 3.0 Marks**
-  - Stated the primary section accurately; including the specific rule/sub-section would secure full marks.
-- **Analysis & Application to Facts**: **3.0 / 4.0 Marks**
-  - Logical structure is well maintained with good paragraph separation.
-- **Conclusion & Working Notes**: **2.0 / 3.0 Marks**
-  - Final conclusion is correct, but working calculations should be explicitly labelled in a distinct working note box.
-
-#### 2. What You Did Well
-- Clean handwriting and appropriate paragraph separation.
-- Accurately identified the core statutory thresholds.
-
-#### 3. Where You Lost Marks
-- Missed mentioning the statutory time limit / penalty consequence.
-- Key legal terminology could be more precise.
-
-#### 4. Examiner's Pro-Tip for Full Marks
-- Always conclude with a boxed 2-line summary stating: *"Hence, applying the provisions of Section X, the proposed action is valid/invalid in law."*"""
-
-        # GST / Indirect Tax query
-        if "gst" in msg_lower or "goods and services" in msg_lower:
-            return """### Goods and Services Tax (GST) - Exam Overview
-
-#### 1. Core Statutory Concept
-**Goods and Services Tax (GST)** is a comprehensive, multi-stage, **destination-based consumption tax** levied on the supply of goods and services (or both), enacted via the **101st Constitutional Amendment Act, 2016** and effective from **1st July 2017**.
-
-#### 2. Key Exam Features
-- **Dual GST Model**: India follows a dual structure where both Centre and States levy tax concurrently:
-  - **CGST (Central GST)** & **SGST/UTGST (State/UT GST)** on Intra-State supplies.
-  - **IGST (Integrated GST)** on Inter-State supplies and imports (collected by Centre and apportioned to destination State).
-- **Taxable Event**: The taxable event is **"Supply"** as defined under **Section 7 of the CGST Act, 2017** (replacing manufacture, sale, or provision of services).
-- **Continuous Flow of Credit (ITC)**: Seamless Input Tax Credit under **Section 16** avoids cascading effects of taxes across the supply chain.
-
-#### 3. ICAI Exam Scoring Tips
-In exam problems, always determine:
-1. **Place of Supply** (Section 10/12 for goods, Section 12/13 for services under IGST Act).
-2. **Nature of Supply**: Intra-State (CGST + SGST) vs Inter-State (IGST).
-3. **Value of Supply** under Section 15 of CGST Act before applying applicable rates."""
-
-        # CSR / Corporate Law query
-        if "csr" in msg_lower or "135" in msg_lower:
-            return """### Corporate Social Responsibility (CSR) - Section 135
-
-#### 1. Applicable Statutory Thresholds (Companies Act, 2013)
-Under **Section 135(1)**, every company having:
-- **Net Worth** >= ₹500 Crore, OR
-- **Turnover** >= ₹1,000 Crore, OR
-- **Net Profit** >= ₹5 Crore
-during the immediately preceding financial year must constitute a **CSR Committee** of the Board.
-
-#### 2. Minimum Spend Requirement
-- The Board must ensure the company spends at least **2% of the average net profits** of the company made during the **three immediately preceding financial years**.
-- Activities must conform to **Schedule VII** of the Companies Act, 2013.
-
-#### 3. Treatment of Unspent Amount (Section 135(5) & 135(6))
-- **Ongoing Project**: Transfer to "Unspent CSR Account" within 30 days from end of FY, and spend within 3 financial years.
-- **Other than Ongoing Project**: Transfer to a Fund specified in Schedule VII within 6 months from expiry of FY."""
-
-        # Default query: Section 115BAC or general doubt
-        if "115bac" in msg_lower or "tax" in msg_lower or "slab" in msg_lower:
-            return """### Section 115BAC: Default Tax Regime
-
-#### 1. Relevant Statutory Provisions
-Under **Section 115BAC** of the Income Tax Act, 1961, the concessional tax regime is the **default tax regime** for Individuals, HUFs, AOPs, and BOIs.
-
-**Tax Slabs applicable under Sec 115BAC(1A):**
-- Up to ₹3,00,000: **Nil**
-- ₹3,00,001 to ₹6,00,000: **5%**
-- ₹6,00,001 to ₹9,00,000: **10%**
-- ₹9,00,001 to ₹12,00,000: **15%**
-- ₹12,00,001 to ₹15,00,000: **20%**
-- Above ₹15,00,000: **30%**
-
-#### 2. Key Deductions & Rebate
-- **Standard Deduction under Sec 16(ia)**: Salaried employees are entitled to a deduction of **₹75,000**.
-- **Rebate under Sec 87A**: Available up to **₹25,000** for resident individuals whose total taxable income does not exceed **₹7,00,000** (effective tax payable becomes Nil).
-- **Deductions Not Available**: Sections 80C, 80D, 80TTA, and HRA under Sec 10(13A) cannot be claimed under this regime.
-
-#### 3. Presentation Advice for Exams
-In computation questions, always compute tax liability under both the Default Regime (Sec 115BAC) and the Normal Provisions (Old Regime), and advise the assessee on which option minimizes total tax payable."""
-
-        # General doubt fallback
-        topic = message.strip() if message else "Commerce Exam Concepts"
-        return f"""### Exam Analysis: {topic}
-
-#### 1. Key Conceptual Framework
-In professional commerce examinations (CA, CS, CMA), questions regarding **{topic}** require precision:
-- **Statutory Foundation**: Reference the governing Act, applicable Section, or relevant Accounting Standard/Ind AS.
-- **Scope & Definitions**: Clearly specify definitions, statutory thresholds, and mandatory compliance requirements.
-
-#### 2. Presentation Guidelines for Maximum Score
-- **Calculations**: Present numerical steps in neat tabular format with numbered **Working Notes**.
-- **Case Law & Precedents**: When analyzing legal problems, follow the **Issue - Provision - Explanation - Conclusion** structure.
-- **Examiner's Note**: Ensure exact statutory terminology is used to secure full step marks."""

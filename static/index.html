@@ -71,10 +71,17 @@
             </div>
         </div>
 
-        <!-- Sidebar Footer (Institute Profile) -->
-        <div class="p-3 border-t border-[#262626] bg-[#141414]">
-            <div class="flex items-center gap-2.5 px-2 py-1.5 rounded-xl">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center font-black text-slate-900 text-sm shadow-sm">
+        <!-- Sidebar Footer (Institute Profile & Course Setting) -->
+        <div class="p-3 border-t border-[#262626] bg-[#141414] space-y-2">
+            <button onclick="openOnboardingModal(true)" class="w-full flex items-center justify-between text-xs text-neutral-300 hover:text-white bg-[#1f1f1f] hover:bg-[#282828] border border-[#2e2e2e] px-2.5 py-2 rounded-xl transition">
+                <span class="flex items-center gap-2">
+                    <i data-lucide="graduation-cap" class="w-4 h-4 text-amber-400"></i>
+                    <span>Course & Level</span>
+                </span>
+                <span id="sidebar-course-level-badge" class="font-bold text-[10px] text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded">CA Inter</span>
+            </button>
+            <div class="flex items-center gap-2.5 px-2 py-1">
+                <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center font-black text-slate-900 text-xs shadow-sm">
                     E
                 </div>
                 <div class="flex-1 min-w-0">
@@ -104,6 +111,11 @@
 
             <!-- Header Actions -->
             <div class="flex items-center gap-2">
+                <button onclick="openOnboardingModal(true)" class="flex items-center gap-1.5 bg-[#2a2a2a] hover:bg-[#333333] text-neutral-200 border border-[#3e3e3e] px-3 py-1.5 rounded-xl text-xs font-semibold transition" title="Change Course or Level">
+                    <i data-lucide="graduation-cap" class="w-3.5 h-3.5 text-amber-400"></i>
+                    <span id="header-course-level-badge">CA Inter</span>
+                    <i data-lucide="chevron-down" class="w-3 h-3 text-neutral-400"></i>
+                </button>
                 <button onclick="openMcqModal()" class="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/25 to-amber-600/15 hover:from-amber-500/35 hover:to-amber-600/25 text-amber-300 border border-amber-500/40 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="Practice Interactive 10 Exam MCQs">
                     <i data-lucide="award" class="w-4 h-4 text-amber-400"></i>
                     <span>10-MCQ Test</span>
@@ -266,10 +278,10 @@
                                 <span>Interactive MCQ Test</span>
                                 <span id="mcq-topic-badge" class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-semibold hidden"></span>
                             </h3>
-                            <p class="text-[11px] text-neutral-400">Official ICAI/ICSI Exam Standard • Answers Hidden Until Submission</p>
+                            <p class="text-[11px] text-neutral-400">Official Exam Standard • Answers Hidden Until Submission</p>
                         </div>
                     </div>
-                    <button onclick="closeMcqModal()" class="p-2 text-neutral-400 hover:text-white hover:bg-[#2c2c2c] rounded-xl transition cursor-pointer" title="Close Window (Esc)">
+                    <button onclick="closeMcqModal()" id="close-mcq-btn" class="p-2 text-neutral-400 hover:text-white hover:bg-[#2c2c2c] rounded-xl transition cursor-pointer" title="Close Window (Esc)">
                         <i data-lucide="x" class="w-5 h-5"></i>
                     </button>
                 </div>
@@ -280,11 +292,16 @@
                 <!-- View 1: Setup View -->
                 <div id="mcq-setup-view" class="space-y-5">
                     <div class="text-center py-2 space-y-1">
-                        <h4 class="text-base font-bold text-white">Configure Your Practice Session</h4>
-                        <p class="text-xs text-neutral-400">Test yourself under authentic exam conditions. Answers and step calculations are revealed after you submit.</p>
+                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold">
+                            <span id="mcq-student-track-badge">CA Inter</span>
+                            <span class="text-neutral-500">•</span>
+                            <a href="javascript:void(0)" onclick="openOnboardingModal()" class="underline hover:text-white">Change Track</a>
+                        </div>
+                        <h4 class="text-base font-bold text-white mt-1">Configure Practice Session</h4>
+                        <p class="text-xs text-neutral-400">Test yourself under authentic exam conditions. Instant scoring and working notes after each question.</p>
                     </div>
 
-                    <!-- Topic Mode Selection -->
+                    <!-- Test Mode Selection -->
                     <div class="space-y-3">
                         <label class="block text-xs font-bold uppercase tracking-wider text-neutral-400">Select Test Type</label>
                         
@@ -295,69 +312,68 @@
                                     <i data-lucide="shuffle" class="w-5 h-5"></i>
                                 </div>
                                 <div class="flex-1">
-                                    <p class="text-xs font-bold text-white">Random Exam Test</p>
-                                    <p class="text-[11px] text-neutral-400 mt-0.5">Mixed questions across Law, Tax, Costing, Accounts & Audit</p>
+                                    <p class="text-xs font-bold text-white">Mixed Syllabus Test</p>
+                                    <p class="text-[11px] text-neutral-400 mt-0.5">Comprehensive questions across all subjects for your level</p>
                                 </div>
                             </div>
 
-                            <!-- Option B: Specific Topic -->
+                            <!-- Option B: Specific Subject & Topic -->
                             <div onclick="selectMcqMode('topic')" id="mcq-mode-topic" class="p-4 rounded-2xl border border-[#383838] bg-[#242424] hover:bg-[#282828] cursor-pointer transition flex items-start gap-3">
                                 <div class="mt-0.5 text-neutral-400">
                                     <i data-lucide="target" class="w-5 h-5"></i>
                                 </div>
                                 <div class="flex-1">
-                                    <p class="text-xs font-bold text-white">Specific Topic Practice</p>
-                                    <p class="text-[11px] text-neutral-400 mt-0.5">Focus deeply on a particular chapter or concept</p>
+                                    <p class="text-xs font-bold text-white">Specific Subject / Topic</p>
+                                    <p class="text-[11px] text-neutral-400 mt-0.5">Focus deeply on a particular subject or chapter</p>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Topic Selector (Visible when 'topic' mode is active) -->
-                        <div id="mcq-topic-selector" class="hidden space-y-2 pt-2">
-                            <label class="block text-xs font-bold text-neutral-300">Choose Subject or Topic:</label>
-                            <select id="mcq-topic-dropdown" onchange="handleMcqDropdownChange(this)" class="w-full bg-[#282828] border border-[#3e3e3e] text-xs font-semibold text-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-amber-400 transition">
-                                <option value="CA Inter - Cost & Management Accounting (Standard Costing, Variances, Budgets, Marginal Costing)">CA Inter - Costing (Variances, Budgets, Marginal Costing)</option>
-                                <option value="CA Inter - Taxation (Income Tax Slabs, Sec 115BAC, Capital Gains, GST & ITC)">CA Inter - Taxation (Income Tax & GST)</option>
-                                <option value="CA Inter - Corporate & Other Laws (Buy-back of Shares Sec 68, CSR Sec 135, Management & Administration)">CA Inter - Corporate Law (Buyback, CSR, Share Capital)</option>
-                                <option value="CA Inter - Auditing and Ethics (Standards on Auditing, Audit Reports, Internal Control)">CA Inter - Auditing & Ethics</option>
-                                <option value="CA Inter - Advanced Accounting (Accounting Standards, Consolidation, Buy-back)">CA Inter - Advanced Accounting</option>
-                                <option value="CA Foundation - Business Laws (Contract Act, Sale of Goods, Partnership, LLP)">CA Foundation - Business Laws</option>
-                                <option value="CA Foundation - Business Economics (Demand & Supply, Production & Cost, Market Forms)">CA Foundation - Business Economics</option>
-                                <option value="CA Foundation - Quantitative Aptitude (Time Value of Money, Ratios, Probability, Statistics)">CA Foundation - Quantitative Aptitude</option>
-                                <option value="Custom">Other Custom Topic (Type Below)...</option>
-                            </select>
+                        <!-- Subject & Topic Selector (Visible when 'topic' mode is active) -->
+                        <div id="mcq-topic-selector" class="hidden space-y-3 pt-2">
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-bold text-neutral-300">Choose Subject:</label>
+                                <select id="mcq-subject-dropdown" class="w-full bg-[#282828] border border-[#3e3e3e] text-xs font-semibold text-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-amber-400 transition">
+                                    <option value="All">All Subjects (Mixed)</option>
+                                </select>
+                            </div>
 
-                            <input type="text" id="mcq-custom-topic" placeholder="Type custom topic, e.g. Labour Rate Variances, Section 115BAC, Buyback of Shares..." class="hidden w-full bg-[#282828] border border-[#3e3e3e] text-xs text-neutral-100 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-amber-400 transition">
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-bold text-neutral-300">Specific Chapter / Topic <span class="text-neutral-500 font-normal">(Optional)</span>:</label>
+                                <input type="text" id="mcq-custom-topic" placeholder="e.g. Input Tax Credit, Buyback of Shares, Standard Costing..." class="w-full bg-[#282828] border border-[#3e3e3e] text-xs text-neutral-100 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-amber-400 transition">
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Question Count Selection (10 Questions Default) -->
+                    <!-- Question Count Selection (5, 10, 15) -->
                     <div class="space-y-2">
                         <div class="flex items-center justify-between">
                             <label class="block text-xs font-bold uppercase tracking-wider text-neutral-400">Number of Questions</label>
                             <span class="text-[10px] text-amber-400 font-semibold">10 Qs Recommended</span>
                         </div>
-                        <div class="flex items-center gap-3">
-                            <button onclick="setMcqCount(10)" id="count-btn-10" class="flex-1 py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition flex items-center justify-center gap-1.5 shadow-sm">
-                                <i data-lucide="check" class="w-3.5 h-3.5 text-amber-400"></i>
-                                <span>10 Questions (Full Test)</span>
+                        <div class="grid grid-cols-3 gap-2.5">
+                            <button onclick="setMcqCount(5)" id="count-btn-5" class="py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition text-center cursor-pointer">
+                                5 Questions
                             </button>
-                            <button onclick="setMcqCount(5)" id="count-btn-5" class="flex-1 py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition">
-                                <span>5 Questions (Quick Drill)</span>
+                            <button onclick="setMcqCount(10)" id="count-btn-10" class="py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition text-center shadow-sm cursor-pointer">
+                                10 Questions
+                            </button>
+                            <button onclick="setMcqCount(15)" id="count-btn-15" class="py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition text-center cursor-pointer">
+                                15 Questions
                             </button>
                         </div>
                     </div>
 
                     <!-- Start Button -->
                     <div class="pt-2">
-                        <button onclick="startInteractiveQuiz()" id="start-quiz-btn" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-3.5 rounded-2xl text-xs shadow-lg transition flex items-center justify-center gap-2">
+                        <button onclick="startInteractiveQuiz()" id="start-quiz-btn" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-3.5 rounded-2xl text-xs shadow-lg transition flex items-center justify-center gap-2 cursor-pointer">
                             <i data-lucide="play" class="w-4 h-4 fill-slate-950"></i>
-                            <span>Start 10-Question Interactive Test</span>
+                            <span>Start Interactive Practice Test</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- View 2: Active Quiz Taking View (Answers 100% Hidden) -->
+                <!-- View 2: Active Quiz Taking View (One Question at a Time, Interactive Instant Check) -->
                 <div id="mcq-quiz-view" class="hidden space-y-4">
                     
                     <!-- Header Bar with Timer & Counters -->
@@ -369,13 +385,13 @@
                                     <i data-lucide="clock" class="w-3 h-3 text-amber-400"></i>
                                     <span id="quiz-timer-text">00:00</span>
                                 </span>
-                                <span id="quiz-answered-counter" class="text-neutral-400 text-[11px]">0 of 10 answered</span>
+                                <span id="quiz-answered-counter" class="text-neutral-400 text-[11px]">0 of 10 completed</span>
                             </div>
                         </div>
 
-                        <!-- 10-Question Interactive Palette -->
+                        <!-- Interactive Question Palette -->
                         <div id="quiz-palette" class="flex flex-wrap items-center gap-1.5 pt-1">
-                            <!-- Populated dynamically: clickable pills 1 to 10 -->
+                            <!-- Populated dynamically -->
                         </div>
 
                         <!-- Progress Bar -->
@@ -387,38 +403,45 @@
                     <!-- Question Container -->
                     <div class="bg-[#242424] border border-[#353535] rounded-2xl p-4 sm:p-5 space-y-4 shadow-md">
                         <div id="quiz-question-text" class="text-sm font-semibold text-white leading-relaxed select-text">
-                            <!-- Populated by JS -->
+                            <!-- Question text -->
                         </div>
 
-                        <!-- 4 Options (Answers Hidden) -->
+                        <!-- 4 Options -->
                         <div id="quiz-options-container" class="space-y-2.5">
-                            <!-- Populated by JS -->
+                            <!-- Options A, B, C, D -->
+                        </div>
+
+                        <!-- Instant Feedback & Brief Reasoning Box (Revealed upon submitting this question) -->
+                        <div id="quiz-instant-feedback" class="hidden space-y-3 pt-2">
+                            <!-- Feedback status badge -->
+                            <div id="feedback-status-badge"></div>
+                            <!-- ICAI Reasoning Box -->
+                            <div class="p-3.5 sm:p-4 rounded-xl bg-[#142314] border border-emerald-500/40 text-emerald-100 text-xs sm:text-sm space-y-1.5 shadow-inner">
+                                <p class="font-bold flex items-center gap-1.5 text-emerald-300 text-xs uppercase tracking-wide">
+                                    <i data-lucide="lightbulb" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
+                                    <span>Reasoning & Working Solution</span>
+                                </p>
+                                <p id="feedback-explanation-text" class="text-emerald-100/95 leading-relaxed"></p>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Navigation Footer -->
                     <div class="flex items-center justify-between pt-1">
-                        <button onclick="prevMcqQuestion()" id="quiz-prev-btn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-[#2a2a2a] hover:bg-[#333] border border-[#383838] text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1.5">
+                        <button onclick="prevMcqQuestion()" id="quiz-prev-btn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-[#2a2a2a] hover:bg-[#333] border border-[#383838] text-neutral-300 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1.5 cursor-pointer">
                             <i data-lucide="chevron-left" class="w-4 h-4"></i>
                             <span>Previous</span>
                         </button>
 
                         <div class="flex items-center gap-2">
-                            <button onclick="nextMcqQuestion()" id="quiz-next-btn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-[#2a2a2a] hover:bg-[#333] border border-[#383838] text-neutral-300 transition flex items-center gap-1.5">
+                            <button onclick="submitCurrentQuestion()" id="quiz-check-btn" class="px-5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md transition flex items-center gap-1.5 cursor-pointer">
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                                <span>Submit Answer</span>
+                            </button>
+
+                            <button onclick="nextMcqQuestion()" id="quiz-next-btn" class="px-5 py-2 rounded-xl text-xs font-bold bg-[#303030] hover:bg-[#383838] border border-[#484848] text-white shadow-md transition flex items-center gap-1.5 cursor-pointer">
                                 <span>Next</span>
                                 <i data-lucide="chevron-right" class="w-4 h-4"></i>
-                            </button>
-
-                            <button onclick="submitQuiz()" id="quiz-submit-btn" class="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition flex items-center gap-1.5">
-                                <i data-lucide="check" class="w-4 h-4 font-bold"></i>
-                                <span>Finish & Score</span>
-                            </button>
-                        </div>
-                    </div>
-
-                </div>
-                                <i data-lucide="check" class="w-4 h-4 font-bold"></i>
-                                <span>Finish & Score</span>
                             </button>
                         </div>
                     </div>
@@ -435,17 +458,21 @@
                         </div>
                         <div>
                             <p class="text-xs uppercase tracking-wider font-bold text-neutral-400">Your Exam Score</p>
-                            <h2 id="results-score-text" class="text-3xl font-black text-white mt-1">4 / 5 (80%)</h2>
+                            <h2 id="results-score-text" class="text-3xl font-black text-white mt-1">8 / 10 (80%)</h2>
                         </div>
                         <p id="results-feedback-text" class="text-xs text-amber-300/90 font-medium">Outstanding performance! Strong conceptual clarity.</p>
                     </div>
 
-                    <!-- Instant Action Bar (Close or Retake without scrolling) -->
-                    <div class="flex items-center justify-between bg-[#252525] border border-[#383838] p-3 rounded-2xl">
-                        <span class="text-xs text-neutral-300 font-semibold flex items-center gap-1.5">
-                            <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
-                            <span>Test Complete • Review Answers Below</span>
-                        </span>
+                    <!-- Instant Action Bar with Review Filter -->
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between bg-[#252525] border border-[#383838] p-3 rounded-2xl gap-2">
+                        <div class="flex items-center gap-2">
+                            <button onclick="filterResults('all')" id="filter-all-btn" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 transition cursor-pointer">
+                                All Questions (<span id="results-total-count">10</span>)
+                            </button>
+                            <button onclick="filterResults('mistakes')" id="filter-mistakes-btn" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#303030] text-neutral-300 hover:text-white border border-[#404040] transition cursor-pointer">
+                                Review Mistakes (<span id="results-mistakes-count">0</span>)
+                            </button>
+                        </div>
                         <div class="flex items-center gap-2">
                             <button onclick="resetMcqToSetup()" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#303030] hover:bg-[#383838] text-amber-300 border border-amber-500/30 transition flex items-center gap-1 cursor-pointer">
                                 <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
@@ -461,7 +488,7 @@
                     <div class="space-y-4">
                         <h4 class="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                             <i data-lucide="list-checks" class="w-4 h-4 text-amber-400"></i>
-                            <span>Detailed Exam Solutions & Reasoning</span>
+                            <span>Detailed Exam Solutions & Working Notes</span>
                         </h4>
 
                         <div id="results-breakdown-list" class="space-y-4">
@@ -473,7 +500,7 @@
                     <div class="flex flex-col sm:flex-row items-center gap-3 pt-3 border-t border-[#2e2e2e]">
                         <button onclick="resetMcqToSetup()" class="w-full sm:flex-1 py-3 rounded-xl text-xs font-bold bg-[#2a2a2a] hover:bg-[#333] border border-[#383838] text-white transition flex items-center justify-center gap-2 cursor-pointer">
                             <i data-lucide="rotate-ccw" class="w-4 h-4 text-amber-400"></i>
-                            <span>Practice Another Topic</span>
+                            <span>Practice Another Subject / Topic</span>
                         </button>
                         <button onclick="closeMcqModal()" class="w-full sm:w-auto px-8 py-3 rounded-xl text-xs font-bold bg-white text-slate-900 hover:bg-neutral-200 transition cursor-pointer shadow-md">
                             Close Window
@@ -482,12 +509,60 @@
 
                 </div>
 
+                </div>
+
             </div>
 
         </div>
     </div>
 
+    <!-- Student Course & Level Onboarding Modal -->
+    <div id="onboarding-modal" style="display: none;" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden overflow-y-auto p-4 flex items-center justify-center">
+        <div class="bg-[#1e1e1e] border border-[#3e3e3e] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-5 text-left relative" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between border-b border-[#2e2e2e] pb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                        <i data-lucide="graduation-cap" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-white">Select Your Exam Track</h3>
+                        <p class="text-xs text-neutral-400">All answers & MCQs will strictly match your syllabus.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <!-- Course -->
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-neutral-300">1. Course</label>
+                    <select id="onboarding-course-select" onchange="onOnboardingCourseChanged()" class="w-full bg-[#2a2a2a] border border-[#3e3e3e] text-white text-sm font-semibold rounded-2xl p-3 focus:outline-none focus:border-amber-500 transition">
+                        <option value="CA" selected>CA (Chartered Accountancy)</option>
+                        <option value="CS">CS (Company Secretary)</option>
+                        <option value="CMA">CMA (Cost & Management)</option>
+                    </select>
+                </div>
+
+                <!-- Level -->
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-bold uppercase tracking-wider text-neutral-300">2. Level</label>
+                    <select id="onboarding-level-select" class="w-full bg-[#2a2a2a] border border-[#3e3e3e] text-white text-sm font-semibold rounded-2xl p-3 focus:outline-none focus:border-amber-500 transition">
+                        <option value="Foundation">Foundation</option>
+                        <option value="Inter" selected>Intermediate / Inter</option>
+                        <option value="Final">Final</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="pt-2">
+                <button onclick="saveStudentOnboarding()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 px-5 rounded-2xl text-sm transition shadow-lg flex items-center justify-center gap-2 cursor-pointer">
+                    <span>Confirm & Continue</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- App JavaScript -->
-    <script src="/static/app.js?v=2.3.0"></script>
+    <script src="/static/app.js?v=2.4.0"></script>
 </body>
 </html>

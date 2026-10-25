@@ -18,7 +18,22 @@ import {
   Alert,
 } from 'react-native';
 
-const CLOUD_API_URL = 'https://excel-ai-backend-yegx.onrender.com/api/chat';
+// Storage abstraction (uses AsyncStorage if installed, else persistent memory store)
+let AsyncStorage;
+try {
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+} catch (e) {
+  const memoryStore = {};
+  AsyncStorage = {
+    getItem: async (key) => memoryStore[key] || null,
+    setItem: async (key, val) => { memoryStore[key] = String(val); },
+    removeItem: async (key) => { delete memoryStore[key]; }
+  };
+}
+
+const BASE_API_URL = 'https://excel-ai-backend-yegx.onrender.com';
+const CLOUD_API_URL = `${BASE_API_URL}/api/chat`;
+const CLOUD_MCQ_URL = `${BASE_API_URL}/api/mcq/generate`;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 function cleanExamMarkdown(text) {
@@ -31,20 +46,43 @@ function cleanExamMarkdown(text) {
   cleaned = cleaned.replace(/\\cdot\b/g, "·");
   cleaned = cleaned.replace(/\\div\b/g, "÷");
   cleaned = cleaned.replace(/\\pm\b/g, "±");
-  cleaned = cleaned.replace(/\\leq\b/g, "≤");
-  cleaned = cleaned.replace(/\\geq\b/g, "≥");
-  cleaned = cleaned.replace(/\\neq\b/g, "≠");
+  cleaned = cleaned.replace(/\\(leq|le)\b/g, "≤");
+  cleaned = cleaned.replace(/\\(geq|ge)\b/g, "≥");
+  cleaned = cleaned.replace(/\\(neq|ne)\b/g, "≠");
   for (let i = 0; i < 3; i++) {
     cleaned = cleaned.replace(/\\text\{([^{}]*)\}/g, "$1");
   }
   cleaned = cleaned.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1 / $2)");
   cleaned = cleaned.replace(/\\(quad|qquad|,|;|!)/g, " ");
+  cleaned = cleaned.replace(/\\left\s*([(\[{|])/g, "$1");
+  cleaned = cleaned.replace(/\\right\s*([)\]}|])/g, "$1");
+  cleaned = cleaned.replace(/\\\[/g, "[").replace(/\\\]/g, "]").replace(/\\\(/g, "(").replace(/\\\)/g, ")");
   cleaned = cleaned.replace(/\$\$([\s\S]*?)\$\$/g, (m, p1) => "\n\n" + p1.trim() + "\n\n");
   cleaned = cleaned.replace(/\$([^\$\n]+)\$/g, (m, p1) => p1.trim());
+  cleaned = cleaned.replace(/\$/g, "");
   return cleaned.trim();
 }
 
 export default function App() {
+  // Course and Level state
+  const [studentCourse, setStudentCourse] = useState('CA');
+  const [studentLevel, setStudentLevel] = useState('Inter');
+  const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [tempCourse, setTempCourse] = useState('CA');
+  const [tempLevel, setTempLevel] = useState('Inter');
+
+  // Interactive MCQ Modal state
+  const [mcqModalVisible, setMcqModalVisible] = useState(false);
+  const [mcqLoading, setMcqLoading] = useState(false);
+  const [mcqCount, setMcqCount] = useState(10);
+  const [mcqCustomTopic, setMcqCustomTopic] = useState('');
+  const [mcqQuizData, setMcqQuizData] = useState(null);
+  const [mcqCurrentIndex, setMcqCurrentIndex] = useState(0);
+  const [mcqUserAnswers, setMcqUserAnswers] = useState({});
+  const [mcqSubmittedQuestions, setMcqSubmittedQuestions] = useState({});
+  const [mcqShowResults, setMcqShowResults] = useState(false);
+  const [mcqReviewMistakesOnly, setMcqReviewMistakesOnly] = useState(false);
+
   // State
   const [sessions, setSessions] = useState([
     {
@@ -71,6 +109,36 @@ export default function App() {
 
   const currentSession =
     sessions.find((s) => s.id === currentSessionId) || sessions[0];
+
+  // Load saved course & level on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const c = await AsyncStorage.getItem('student_course');
+        const l = await AsyncStorage.getItem('student_level');
+        if (c && l) {
+          setStudentCourse(c);
+          setStudentLevel(l);
+          setTempCourse(c);
+          setTempLevel(l);
+        } else {
+          setOnboardingVisible(true);
+        }
+      } catch (err) {
+        setOnboardingVisible(true);
+      }
+    })();
+  }, []);
+
+  const saveCourseLevel = async (c, l) => {
+    setStudentCourse(c);
+    setStudentLevel(l);
+    setOnboardingVisible(false);
+    try {
+      await AsyncStorage.setItem('student_course', c);
+      await AsyncStorage.setItem('student_level', l);
+    } catch (e) {}
+  };
 
   // Drawer Animation
   useEffect(() => {
@@ -167,6 +235,13 @@ export default function App() {
           type: 'image/jpeg',
         });
       }
+      formData.append('course', studentCourse || 'CA');
+      formData.append('level', studentLevel || 'Inter');
+      const historyList = (currentSession.messages || []).slice(-6).map((m) => ({
+        role: m.role || 'user',
+        text: m.text || '',
+      }));
+      formData.append('history', JSON.stringify(historyList));
 
       const response = await fetch(CLOUD_API_URL, {
         method: 'POST',
@@ -224,6 +299,72 @@ export default function App() {
     );
   };
 
+  // Mobile MCQ Engine Handlers
+  const startMobileQuiz = async () => {
+    setMcqLoading(true);
+    try {
+      const resp = await fetch(CLOUD_MCQ_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          course: studentCourse,
+          level: studentLevel,
+          topic: mcqCustomTopic.trim() || 'Random',
+          count: mcqCount,
+        }),
+      });
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Failed to generate quiz');
+      }
+      const data = await resp.json();
+      if (!data.questions || data.questions.length === 0) {
+        throw new Error('No questions returned');
+      }
+      setMcqQuizData(data);
+      setMcqCurrentIndex(0);
+      setMcqUserAnswers({});
+      setMcqSubmittedQuestions({});
+      setMcqShowResults(false);
+      setMcqReviewMistakesOnly(false);
+    } catch (e) {
+      Alert.alert('Quiz Notice', e.message || 'Could not load MCQs. Check internet connection.');
+    } finally {
+      setMcqLoading(false);
+    }
+  };
+
+  const selectMobileOption = (key) => {
+    if (mcqSubmittedQuestions[mcqCurrentIndex]) return;
+    setMcqUserAnswers({ ...mcqUserAnswers, [mcqCurrentIndex]: key });
+  };
+
+  const submitMobileQuestion = () => {
+    if (!mcqUserAnswers[mcqCurrentIndex]) {
+      Alert.alert('Select Option', 'Please select an option before checking.');
+      return;
+    }
+    setMcqSubmittedQuestions({ ...mcqSubmittedQuestions, [mcqCurrentIndex]: true });
+  };
+
+  const nextMobileQuestion = () => {
+    if (!mcqQuizData) return;
+    if (mcqCurrentIndex < mcqQuizData.questions.length - 1) {
+      setMcqCurrentIndex(mcqCurrentIndex + 1);
+    } else {
+      setMcqShowResults(true);
+    }
+  };
+
+  const resetMobileQuiz = () => {
+    setMcqQuizData(null);
+    setMcqShowResults(false);
+    setMcqUserAnswers({});
+    setMcqSubmittedQuestions({});
+    setMcqCurrentIndex(0);
+    setMcqReviewMistakesOnly(false);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#171717" />
@@ -239,9 +380,14 @@ export default function App() {
 
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Excel AI</Text>
-          <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>ICAI / ICSI</Text>
-          </View>
+          <TouchableOpacity
+            onPress={() => setOnboardingVisible(true)}
+            style={styles.headerBadge}
+          >
+            <Text style={styles.headerBadgeText}>
+              {studentCourse} {studentLevel}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity onPress={startNewChat} style={styles.headerButton}>
@@ -274,6 +420,21 @@ export default function App() {
 
               {/* Suggestion cards */}
               <View style={styles.suggestionsContainer}>
+                <TouchableOpacity
+                  style={[styles.suggestionCard, { borderColor: '#f59e0b', backgroundColor: '#1c1914' }]}
+                  onPress={() => {
+                    resetMobileQuiz();
+                    setMcqModalVisible(true);
+                  }}
+                >
+                  <Text style={[styles.suggestionTitle, { color: '#fbbf24' }]}>
+                    🏆 Interactive MCQ Practice
+                  </Text>
+                  <Text style={styles.suggestionDesc}>
+                    {studentCourse} {studentLevel} exam drill with live scoring & working notes
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.suggestionCard}
                   onPress={() =>
@@ -487,6 +648,43 @@ export default function App() {
             })}
           </ScrollView>
 
+          {/* Interactive MCQ Drill Button */}
+          <TouchableOpacity
+            onPress={() => {
+              toggleSidebar(false);
+              resetMobileQuiz();
+              setMcqModalVisible(true);
+            }}
+            style={[styles.changeTrackButton, { marginBottom: 8, borderColor: 'rgba(245, 158, 11, 0.3)' }]}
+          >
+            <Text style={styles.changeTrackIcon}>🏆</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.changeTrackLabel}>Exam Drill</Text>
+              <Text style={[styles.changeTrackValue, { color: '#fbbf24' }]}>
+                Interactive MCQs
+              </Text>
+            </View>
+            <Text style={[styles.changeTrackAction, { color: '#fbbf24' }]}>Start</Text>
+          </TouchableOpacity>
+
+          {/* Change Course / Level Button */}
+          <TouchableOpacity
+            onPress={() => {
+              toggleSidebar(false);
+              setOnboardingVisible(true);
+            }}
+            style={styles.changeTrackButton}
+          >
+            <Text style={styles.changeTrackIcon}>🎓</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.changeTrackLabel}>Exam Track</Text>
+              <Text style={styles.changeTrackValue}>
+                {studentCourse} {studentLevel}
+              </Text>
+            </View>
+            <Text style={styles.changeTrackAction}>Change</Text>
+          </TouchableOpacity>
+
           {/* Sidebar Footer */}
           <View style={styles.sidebarFooter}>
             <View style={styles.footerAvatar}>
@@ -499,6 +697,353 @@ export default function App() {
           </View>
         </SafeAreaView>
       </Animated.View>
+
+      {/* Onboarding / Change Track Modal */}
+      <Modal
+        visible={onboardingVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (studentCourse && studentLevel) setOnboardingVisible(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Choose Your Exam Track</Text>
+            <Text style={styles.modalSubtitle}>
+              Tailors all doubts, statutory sections, and MCQs to your level.
+            </Text>
+
+            <Text style={styles.modalSectionLabel}>1. SELECT COURSE</Text>
+            <View style={styles.optionRow}>
+              {['CA', 'CS', 'CMA'].map((c) => (
+                <TouchableOpacity
+                  key={c}
+                  onPress={() => {
+                    setTempCourse(c);
+                    if (c === 'CS') setTempLevel('Executive');
+                    else setTempLevel('Inter');
+                  }}
+                  style={[
+                    styles.optionButton,
+                    tempCourse === c && styles.optionButtonActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionButtonText,
+                      tempCourse === c && styles.optionButtonTextActive,
+                    ]}
+                  >
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.modalSectionLabel}>2. SELECT LEVEL</Text>
+            <View style={styles.optionRow}>
+              {(tempCourse === 'CS'
+                ? ['Executive', 'Professional']
+                : ['Foundation', 'Inter', 'Final']
+              ).map((lvl) => (
+                <TouchableOpacity
+                  key={lvl}
+                  onPress={() => setTempLevel(lvl)}
+                  style={[
+                    styles.optionButton,
+                    tempLevel === lvl && styles.optionButtonActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.optionButtonText,
+                      tempLevel === lvl && styles.optionButtonTextActive,
+                    ]}
+                  >
+                    {lvl}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              onPress={() => saveCourseLevel(tempCourse, tempLevel)}
+              style={styles.confirmTrackButton}
+            >
+              <Text style={styles.confirmTrackButtonText}>
+                Confirm Exam Track
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Interactive MCQ Practice Modal */}
+      <Modal
+        visible={mcqModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMcqModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { maxHeight: '90%', width: '92%', padding: 18 }]}>
+            {/* Header */}
+            <View style={styles.mcqModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 18 }}>🏆</Text>
+                <View>
+                  <Text style={styles.modalTitle}>Interactive MCQ Drill</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {studentCourse} {studentLevel} • Official Exam Standard
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setMcqModalVisible(false)}
+                style={styles.closeModalButton}
+              >
+                <Text style={styles.closeModalButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* View 1: Setup View */}
+            {!mcqQuizData && !mcqShowResults && (
+              <ScrollView style={{ marginTop: 12 }}>
+                <Text style={styles.modalSectionLabel}>1. NUMBER OF QUESTIONS</Text>
+                <View style={styles.optionRow}>
+                  {[5, 10].map((c) => (
+                    <TouchableOpacity
+                      key={c}
+                      onPress={() => setMcqCount(c)}
+                      style={[
+                        styles.optionButton,
+                        mcqCount === c && styles.optionButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.optionButtonText,
+                          mcqCount === c && styles.optionButtonTextActive,
+                        ]}
+                      >
+                        {c} Questions
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.modalSectionLabel}>2. CHAPTER OR TOPIC (OPTIONAL)</Text>
+                <TextInput
+                  style={styles.mcqTopicInput}
+                  placeholder="e.g. Standard Costing, Section 115BAC, Buyback..."
+                  placeholderTextColor="#666"
+                  value={mcqCustomTopic}
+                  onChangeText={setMcqCustomTopic}
+                />
+
+                <TouchableOpacity
+                  onPress={startMobileQuiz}
+                  disabled={mcqLoading}
+                  style={[styles.confirmTrackButton, { marginTop: 24 }]}
+                >
+                  {mcqLoading ? (
+                    <ActivityIndicator color="#0f172a" />
+                  ) : (
+                    <Text style={styles.confirmTrackButtonText}>
+                      Start {mcqCount}-Question Interactive Drill
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {/* View 2: Active Quiz Taking View */}
+            {mcqQuizData && !mcqShowResults && (
+              <ScrollView style={{ marginTop: 10 }}>
+                {(() => {
+                  const q = mcqQuizData.questions[mcqCurrentIndex];
+                  const total = mcqQuizData.questions.length;
+                  const correctKey = (q.correct_answer || q.correct_option || '').toUpperCase().trim();
+                  const isSubmitted = Boolean(mcqSubmittedQuestions[mcqCurrentIndex]);
+                  const userChoice = mcqUserAnswers[mcqCurrentIndex];
+
+                  return (
+                    <View>
+                      {/* Counter */}
+                      <View style={styles.mcqProgressRow}>
+                        <Text style={styles.mcqCounterText}>
+                          Question {mcqCurrentIndex + 1} of {total}
+                        </Text>
+                        <Text style={styles.mcqStatusText}>
+                          {Object.keys(mcqSubmittedQuestions).length} of {total} completed
+                        </Text>
+                      </View>
+
+                      {/* Question Card */}
+                      <View style={styles.mcqQuestionCard}>
+                        <Text style={styles.mcqQuestionText}>
+                          {cleanExamMarkdown(q.question)}
+                        </Text>
+                      </View>
+
+                      {/* 4 Options */}
+                      <View style={{ gap: 8, marginTop: 12 }}>
+                        {['A', 'B', 'C', 'D'].map((key) => {
+                          const optText = cleanExamMarkdown(q.options[key] || '');
+                          const isSelected = userChoice === key;
+
+                          let btnStyle = styles.mcqOptionNormal;
+                          let textStyle = styles.mcqOptionTextNormal;
+
+                          if (!isSubmitted) {
+                            if (isSelected) {
+                              btnStyle = styles.mcqOptionSelected;
+                              textStyle = styles.mcqOptionTextSelected;
+                            }
+                          } else {
+                            if (key === correctKey) {
+                              btnStyle = styles.mcqOptionCorrect;
+                              textStyle = styles.mcqOptionTextCorrect;
+                            } else if (isSelected && key !== correctKey) {
+                              btnStyle = styles.mcqOptionIncorrect;
+                              textStyle = styles.mcqOptionTextIncorrect;
+                            }
+                          }
+
+                          return (
+                            <TouchableOpacity
+                              key={key}
+                              onPress={() => selectMobileOption(key)}
+                              disabled={isSubmitted}
+                              style={[styles.mcqOptionButton, btnStyle]}
+                            >
+                              <View style={styles.mcqOptionBadge}>
+                                <Text style={styles.mcqOptionBadgeText}>{key}</Text>
+                              </View>
+                              <Text style={[styles.mcqOptionText, textStyle]}>
+                                {optText}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+
+                      {/* Instant Feedback & Reasoning Box */}
+                      {isSubmitted && (
+                        <View style={styles.mcqReasoningCard}>
+                          <Text style={styles.mcqReasoningTitle}>
+                            💡 Reasoning & Working Notes:
+                          </Text>
+                          <Text style={styles.mcqReasoningBody}>
+                            {cleanExamMarkdown(q.explanation)}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Navigation Actions */}
+                      <View style={styles.mcqNavRow}>
+                        {!isSubmitted ? (
+                          <TouchableOpacity
+                            onPress={submitMobileQuestion}
+                            disabled={!userChoice}
+                            style={[
+                              styles.mcqSubmitButton,
+                              !userChoice && { opacity: 0.4 },
+                            ]}
+                          >
+                            <Text style={styles.mcqSubmitButtonText}>
+                              Check Answer
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            onPress={nextMobileQuestion}
+                            style={styles.mcqNextButton}
+                          >
+                            <Text style={styles.mcqNextButtonText}>
+                              {mcqCurrentIndex === total - 1
+                                ? 'Finish & View Score'
+                                : 'Next Question →'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })()}
+              </ScrollView>
+            )}
+
+            {/* View 3: Results View */}
+            {mcqQuizData && mcqShowResults && (
+              <ScrollView style={{ marginTop: 10 }}>
+                {(() => {
+                  const total = mcqQuizData.questions.length;
+                  let correctCount = 0;
+                  mcqQuizData.questions.forEach((q, idx) => {
+                    const cKey = (q.correct_answer || q.correct_option || '').toUpperCase().trim();
+                    if (mcqUserAnswers[idx] === cKey) correctCount++;
+                  });
+                  const scorePct = Math.round((correctCount / total) * 100);
+
+                  return (
+                    <View>
+                      <View style={styles.mcqScoreCard}>
+                        <Text style={{ fontSize: 32 }}>🏆</Text>
+                        <Text style={styles.mcqScoreTitle}>Your Score</Text>
+                        <Text style={styles.mcqScoreNumber}>
+                          {correctCount} / {total} ({scorePct}%)
+                        </Text>
+                        <Text style={styles.mcqFeedbackText}>
+                          {scorePct >= 80
+                            ? 'Ranker Standard! Flawless conceptual mastery.'
+                            : scorePct >= 60
+                            ? 'Exam Pass Standard! Strong command with minor revisions.'
+                            : 'Focus Needed! Review the solutions below.'}
+                        </Text>
+                      </View>
+
+                      {/* Solutions list */}
+                      <Text style={[styles.modalSectionLabel, { marginTop: 16 }]}>
+                        QUESTION-BY-QUESTION SOLUTIONS
+                      </Text>
+                      {mcqQuizData.questions.map((q, idx) => {
+                        const cKey = (q.correct_answer || q.correct_option || '').toUpperCase().trim();
+                        const picked = mcqUserAnswers[idx];
+                        const isCorrect = picked === cKey;
+
+                        return (
+                          <View key={idx} style={styles.mcqReviewItem}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <Text style={styles.mcqReviewNum}>Q{idx + 1}</Text>
+                              <Text style={[styles.mcqReviewStatus, { color: isCorrect ? '#34d399' : '#f87171' }]}>
+                                {isCorrect ? '✓ Correct' : `✗ Selected ${picked || 'None'}`}
+                              </Text>
+                            </View>
+                            <Text style={styles.mcqReviewQuestion}>{cleanExamMarkdown(q.question)}</Text>
+                            <Text style={styles.mcqReviewCorrect}>Correct Answer: ({cKey}) {cleanExamMarkdown(q.options[cKey] || '')}</Text>
+                            <Text style={styles.mcqReviewExplanation}>💡 {cleanExamMarkdown(q.explanation)}</Text>
+                          </View>
+                        );
+                      })}
+
+                      <TouchableOpacity
+                        onPress={resetMobileQuiz}
+                        style={[styles.confirmTrackButton, { marginTop: 16, backgroundColor: '#333' }]}
+                      >
+                        <Text style={[styles.confirmTrackButtonText, { color: '#fbbf24' }]}>
+                          Retake / Practice Another
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -884,5 +1429,329 @@ const styles = StyleSheet.create({
   footerSub: {
     color: '#777777',
     fontSize: 10,
+  },
+  changeTrackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1f1f1f',
+    borderColor: '#333333',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    gap: 8,
+  },
+  changeTrackIcon: {
+    fontSize: 16,
+  },
+  changeTrackLabel: {
+    color: '#888888',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  changeTrackValue: {
+    color: '#f59e0b',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  changeTrackAction: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
+    backgroundColor: '#2e2e2e',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#1e1e1e',
+    borderColor: '#383838',
+    borderWidth: 1,
+    borderRadius: 24,
+    width: '100%',
+    maxWidth: 400,
+    padding: 22,
+  },
+  modalTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    color: '#999999',
+    fontSize: 12,
+    marginBottom: 16,
+  },
+  modalSectionLabel: {
+    color: '#aaaaaa',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  optionButton: {
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    borderColor: '#3e3e3e',
+    borderWidth: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  optionButtonActive: {
+    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
+  },
+  optionButtonText: {
+    color: '#cccccc',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  optionButtonTextActive: {
+    color: '#171717',
+    fontWeight: '900',
+  },
+  confirmTrackButton: {
+    backgroundColor: '#f59e0b',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  confirmTrackButtonText: {
+    color: '#171717',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  mcqModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  closeModalButton: {
+    padding: 6,
+  },
+  closeModalButtonText: {
+    color: '#888',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  mcqTopicInput: {
+    backgroundColor: '#262626',
+    borderColor: '#383838',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#fff',
+    fontSize: 13,
+  },
+  mcqProgressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  mcqCounterText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  mcqStatusText: {
+    color: '#888',
+    fontSize: 11,
+  },
+  mcqQuestionCard: {
+    backgroundColor: '#262626',
+    borderColor: '#383838',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 6,
+  },
+  mcqQuestionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  mcqOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    gap: 10,
+  },
+  mcqOptionNormal: {
+    backgroundColor: '#262626',
+    borderColor: '#383838',
+  },
+  mcqOptionSelected: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: '#f59e0b',
+  },
+  mcqOptionCorrect: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    borderColor: '#10b981',
+  },
+  mcqOptionIncorrect: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderColor: '#ef4444',
+  },
+  mcqOptionBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mcqOptionBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  mcqOptionText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  mcqOptionTextNormal: {
+    color: '#e5e5e5',
+  },
+  mcqOptionTextSelected: {
+    color: '#fbbf24',
+    fontWeight: '600',
+  },
+  mcqOptionTextCorrect: {
+    color: '#34d399',
+    fontWeight: '600',
+  },
+  mcqOptionTextIncorrect: {
+    color: '#f87171',
+  },
+  mcqReasoningCard: {
+    backgroundColor: '#122014',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  mcqReasoningTitle: {
+    color: '#34d399',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  mcqReasoningBody: {
+    color: '#d1fae5',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  mcqNavRow: {
+    marginTop: 14,
+    alignItems: 'flex-end',
+  },
+  mcqSubmitButton: {
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  mcqSubmitButtonText: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  mcqNextButton: {
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  mcqNextButtonText: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  mcqScoreCard: {
+    backgroundColor: '#262626',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    gap: 6,
+  },
+  mcqScoreTitle: {
+    color: '#aaa',
+    fontSize: 11,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  mcqScoreNumber: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: 'bold',
+  },
+  mcqFeedbackText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  mcqReviewItem: {
+    backgroundColor: '#262626',
+    borderColor: '#383838',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  mcqReviewNum: {
+    color: '#aaa',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  mcqReviewStatus: {
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  mcqReviewQuestion: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  mcqReviewCorrect: {
+    color: '#34d399',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  mcqReviewExplanation: {
+    color: '#a3a3a3',
+    fontSize: 11,
+    lineHeight: 16,
   },
 });
