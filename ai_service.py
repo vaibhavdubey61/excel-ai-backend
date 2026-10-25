@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import re
 from typing import Dict, Any, List, Optional
 import httpx
 
@@ -38,15 +39,20 @@ EXAM PRESENTATION STANDARDS:
      • Identify **Where marks were lost (Missing keywords, sections, or calculation errors)**.
      • Give an **Examiner's Pro-Tip** on how to achieve full 10/10 marks.
 
-4. MCQ QUIZZES:
-   - When asked for MCQs, generate exam-level questions with 4 options (A, B, C, D), indicate the correct option, and provide a clear explanation.
+4. MATHEMATICAL & FORMULA PRESENTATION STANDARDS (STRICT):
+   - NEVER output raw LaTeX math syntax (such as $$, $, \\text{...}, \\times, \\frac{...}{...}, \\left, \\right).
+   - In Indian commerce exams (ICAI, ICSI, ICMAI), formulas and working notes are ALWAYS presented in clean, readable plain business notation:
+     • Formula example: Labour Rate Variance (LRV) = Actual Hours × (Standard Rate - Actual Rate)
+     • Working note computation: = 4,800 hrs × (₹60 - ₹65) = 4,800 × (-₹5) = ₹24,000 (Adverse)
+     • Use standard business characters: '×' or '*' for multiplication, '÷' or '/' for division, '₹' for currency, and standard parentheses ( ) and brackets [ ].
+     • State variances clearly as (Favourable) or (Adverse) / (F) or (A).
+   - NEVER include internal scratchpad hesitation, self-correction monologue, or reasoning trail (e.g., "Wait, let's recalculate carefully...", "No, 4,800 hours...", "Correction in options: ..."). Output ONLY the final, accurate step-by-step working notes without conversational commentary.
 
 CRITICAL INSTRUCTIONS:
 - Answer with absolute authority, warmth, and precision like a senior faculty member.
 - Do NOT mention internal file names, document paths, or say "According to the study material" or "Based on the uploaded PDF". Deliver the answer directly as authoritative exam knowledge.
 - Keep formatting clean, modern, and readable with bold highlights and bullet points.
 """
-
 
 CANDIDATE_MODELS = [
     "gemini-flash-lite-latest",
@@ -72,7 +78,7 @@ class AIService:
         mime_type: str = "image/jpeg",
         context_chunks: Optional[List[Dict[str, Any]]] = None
     ) -> str:
-        """Single unified method for doubts, evaluations, MCQs, and queries."""
+        """Single unified method for doubts, evaluations, and queries."""
         # 1. Build background context silently
         knowledge_context = ""
         if context_chunks:
@@ -100,6 +106,74 @@ class AIService:
                 return self._simulate_response(message, bool(image_base64))
         else:
             return self._simulate_response(message, bool(image_base64))
+
+    async def generate_interactive_mcqs(
+        self,
+        topic: str = "Random",
+        count: int = 5,
+        level: str = "CA_Inter"
+    ) -> Dict[str, Any]:
+        """Generates structured interactive MCQs with options, hidden answers, and brief reasoning."""
+        is_random = not topic or topic.strip().lower() in ["random", "all", "mixed"]
+        effective_topic = (
+            "Mixed Commerce Exam Syllabus (Income Tax, GST, Corporate Law, Cost & Management Accounting, Auditing & Ethics)"
+            if is_random
+            else topic.strip()
+        )
+
+        prompt = f"""Generate exactly {count} exam-level Multiple Choice Questions (MCQs) for {level} commerce examination on the topic: "{effective_topic}".
+
+CRITICAL REQUIREMENTS:
+1. Provide realistic exam questions conforming to official ICAI / ICSI standards.
+2. For each question, provide exactly 4 distinct options labeled "A", "B", "C", and "D".
+3. Provide the single correct option key ("A", "B", "C", or "D").
+4. Provide a brief, authoritative explanation (2 to 3 sentences) citing relevant section numbers, accounting standards, or step-by-step working calculations.
+5. NO LaTeX math notation (NO $$, $, \\text{{}}, \\times). Use clean readable characters: ×, ÷, ₹, ( ), [ ].
+6. NEVER include internal scratchpad hesitation, self-correction monologue, or reasoning trail.
+7. Return STRICT JSON ONLY without markdown code fences or backticks matching this schema:
+
+{{
+  "topic": "{effective_topic}",
+  "total_questions": {count},
+  "questions": [
+    {{
+      "id": 1,
+      "question": "Question text...",
+      "options": {{
+        "A": "Option A text",
+        "B": "Option B text",
+        "C": "Option C text",
+        "D": "Option D text"
+      }},
+      "correct_option": "B",
+      "explanation": "Brief ICAI reasoning explaining why B is correct..."
+    }}
+  ]
+}}
+"""
+        if self.has_api_key():
+            try:
+                raw_text = await self._call_gemini_api(
+                    prompt,
+                    system_instruction="You are a senior ICAI exam paper setter. Output valid JSON only, without any markdown formatting or commentary."
+                )
+                clean_json_str = raw_text.strip()
+                if clean_json_str.startswith("```json"):
+                    clean_json_str = clean_json_str[7:]
+                elif clean_json_str.startswith("```"):
+                    clean_json_str = clean_json_str[3:]
+                if clean_json_str.endswith("```"):
+                    clean_json_str = clean_json_str[:-3]
+                clean_json_str = clean_json_str.strip()
+
+                data = json.loads(clean_json_str)
+                if "questions" in data and len(data["questions"]) > 0:
+                    return data
+            except Exception as e:
+                print(f"[MCQ Generation Error]: {e}")
+
+        # Fallback offline MCQs
+        return self._simulate_mcq_data(effective_topic, count)
 
     async def _call_gemini_api(
         self,
@@ -150,6 +224,76 @@ class AIService:
 
         raise Exception(f"All Gemini models exhausted. Last error: {last_error}")
 
+    def _simulate_mcq_data(self, topic: str, count: int) -> Dict[str, Any]:
+        """Provides high-quality offline MCQs across commerce subjects with zero LaTeX errors."""
+        all_pool = [
+            {
+                "id": 1,
+                "question": "A manufacturing unit has budgeted standard labor hours of 5,000 hrs at ₹60/hr. In January, actual hours worked were 4,800 hrs at ₹65/hr. What is the Labour Rate Variance (LRV)?",
+                "options": {
+                    "A": "₹24,000 (Favourable)",
+                    "B": "₹24,000 (Adverse)",
+                    "C": "₹12,000 (Adverse)",
+                    "D": "₹10,000 (Favourable)"
+                },
+                "correct_option": "B",
+                "explanation": "Labour Rate Variance (LRV) = Actual Hours × (Standard Rate - Actual Rate) = 4,800 hrs × (₹60 - ₹65) = 4,800 × (-₹5) = ₹24,000 (Adverse). Because the actual hourly rate paid (₹65) exceeds standard (₹60), the variance is adverse."
+            },
+            {
+                "id": 2,
+                "question": "Under Section 115BAC of the Income Tax Act, 1961 (Default Tax Regime for AY 2025-26), what is the maximum rebate available under Section 87A for a resident individual?",
+                "options": {
+                    "A": "₹12,500",
+                    "B": "₹25,000",
+                    "C": "₹37,500",
+                    "D": "Rebate is not allowed"
+                },
+                "correct_option": "B",
+                "explanation": "Under Section 115BAC, resident individuals having total income up to ₹7,00,000 are eligible for tax rebate up to ₹25,000 under Section 87A, resulting in Nil tax liability."
+            },
+            {
+                "id": 3,
+                "question": "What is the statutory ceiling on the buy-back of equity shares in any financial year under Section 68(2)(c) of the Companies Act, 2013?",
+                "options": {
+                    "A": "10% of total paid-up equity capital",
+                    "B": "25% of total paid-up equity capital",
+                    "C": "25% of aggregate paid-up capital and free reserves",
+                    "D": "50% of free reserves"
+                },
+                "correct_option": "B",
+                "explanation": "Under Section 68(2)(c) of Companies Act, 2013, the buy-back of equity shares in any financial year shall not exceed 25% of its total paid-up equity capital in that financial year."
+            },
+            {
+                "id": 4,
+                "question": "Under Section 16(2) of the CGST Act, 2017, what is the maximum time limit for a recipient to pay the supplier, failing which Input Tax Credit (ITC) availed must be reversed with interest?",
+                "options": {
+                    "A": "90 days from the date of invoice",
+                    "B": "180 days from the date of invoice",
+                    "C": "1 year from the date of invoice",
+                    "D": "No time limit if invoice is genuine"
+                },
+                "correct_option": "B",
+                "explanation": "Second proviso to Section 16(2) of the CGST Act mandates that if the recipient fails to pay the supplier the value of supply plus tax within 180 days from invoice date, the ITC availed must be added to output tax liability along with interest."
+            },
+            {
+                "id": 5,
+                "question": "According to SA 705 (Revised), what type of audit opinion should the statutory auditor issue when misstatements are both material AND pervasive to the financial statements?",
+                "options": {
+                    "A": "Qualified Opinion",
+                    "B": "Adverse Opinion",
+                    "C": "Disclaimer of Opinion",
+                    "D": "Unmodified Opinion with Emphasis of Matter"
+                },
+                "correct_option": "B",
+                "explanation": "Under SA 705 (Modifications to the Opinion in the Independent Auditor's Report), an Adverse Opinion is issued when the auditor obtains sufficient appropriate audit evidence and concludes that misstatements, individually or in the aggregate, are both material and pervasive."
+            }
+        ]
+        return {
+            "topic": topic,
+            "total_questions": min(count, len(all_pool)),
+            "questions": all_pool[:count]
+        }
+
     def _simulate_response(self, message: str, has_image: bool) -> str:
         """Intelligent offline fallback response adhering strictly to exam standards."""
         msg_lower = (message or "").lower()
@@ -176,30 +320,6 @@ class AIService:
 
 #### 4. Examiner's Pro-Tip for Full Marks
 - Always conclude with a boxed 2-line summary stating: *"Hence, applying the provisions of Section X, the proposed action is valid/invalid in law."*"""
-
-        # If student asked for MCQs
-        if "mcq" in msg_lower or "quiz" in msg_lower:
-            return """### 🎯 Exam Practice Questions
-
-**Question 1:**
-Under Section 115BAC of the Income Tax Act (Default Tax Regime), what is the maximum rebate available under Section 87A for resident individuals?
-- A) ₹12,500
-- B) ₹25,000
-- C) ₹50,000
-- D) Rebate is not available
-*Correct Answer:* **B) ₹25,000**
-*Reasoning:* Under Section 115BAC, resident individuals with total taxable income up to ₹7,00,000 are eligible for a rebate up to ₹25,000, making tax liability Nil.
-
----
-
-**Question 2:**
-What is the ceiling on the buy-back of equity shares in any financial year under Section 68 of the Companies Act, 2013?
-- A) 10% of total paid-up equity capital
-- B) 25% of total paid-up equity capital
-- C) 25% of aggregate paid-up capital and free reserves
-- D) 50% of free reserves
-*Correct Answer:* **B) 25% of total paid-up equity capital**
-*Reasoning:* While overall buy-back cannot exceed 25% of aggregate paid-up capital and free reserves, the buy-back of equity shares specifically is capped at 25% of total paid-up equity capital in that financial year."""
 
         # GST / Indirect Tax query
         if "gst" in msg_lower or "goods and services" in msg_lower:

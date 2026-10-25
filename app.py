@@ -124,6 +124,23 @@ async def chat_endpoint(
     return {"reply": reply_text}
 
 
+class MCQGenerateRequest(BaseModel):
+    topic: Optional[str] = "Random"
+    count: Optional[int] = 5
+    level: Optional[str] = "CA_Inter"
+
+
+@app.post("/api/mcq/generate")
+async def generate_mcq_endpoint(req: MCQGenerateRequest):
+    """Generates structured interactive MCQs with options, hidden answers, and brief reasoning."""
+    data = await ai.generate_interactive_mcqs(
+        topic=req.topic or "Random",
+        count=req.count or 5,
+        level=req.level or "CA_Inter"
+    )
+    return data
+
+
 def extract_chunks_from_pdf_stream(pdf_stream, doc_name: str, subject: str) -> (int, List[Dict[str, Any]]):
     reader = pypdf.PdfReader(pdf_stream)
     total_pages = len(reader.pages)

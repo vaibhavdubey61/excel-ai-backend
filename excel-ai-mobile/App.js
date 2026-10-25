@@ -21,6 +21,29 @@ import {
 const CLOUD_API_URL = 'https://excel-ai-backend-yegx.onrender.com/api/chat';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+function cleanExamMarkdown(text) {
+  if (!text) return "";
+  let cleaned = text;
+  cleaned = cleaned.replace(/\s*\([Ww]ait,\s*let'?s\s*recalculate[^)]*\)/gi, "");
+  cleaned = cleaned.replace(/\s*\([Ww]ait,\s*let'?s\s*check[^)]*\)/gi, "");
+  cleaned = cleaned.replace(/Correction in options:[^\n.]*(\.|$)/gi, "");
+  cleaned = cleaned.replace(/\\times\b/g, "×");
+  cleaned = cleaned.replace(/\\cdot\b/g, "·");
+  cleaned = cleaned.replace(/\\div\b/g, "÷");
+  cleaned = cleaned.replace(/\\pm\b/g, "±");
+  cleaned = cleaned.replace(/\\leq\b/g, "≤");
+  cleaned = cleaned.replace(/\\geq\b/g, "≥");
+  cleaned = cleaned.replace(/\\neq\b/g, "≠");
+  for (let i = 0; i < 3; i++) {
+    cleaned = cleaned.replace(/\\text\{([^{}]*)\}/g, "$1");
+  }
+  cleaned = cleaned.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1 / $2)");
+  cleaned = cleaned.replace(/\\(quad|qquad|,|;|!)/g, " ");
+  cleaned = cleaned.replace(/\$\$([\s\S]*?)\$\$/g, (m, p1) => "\n\n" + p1.trim() + "\n\n");
+  cleaned = cleaned.replace(/\$([^\$\n]+)\$/g, (m, p1) => p1.trim());
+  return cleaned.trim();
+}
+
 export default function App() {
   // State
   const [sessions, setSessions] = useState([
@@ -158,7 +181,7 @@ export default function App() {
       const assistantMsg = {
         id: 'reply_' + Date.now(),
         role: 'assistant',
-        text: replyText,
+        text: cleanExamMarkdown(replyText),
       };
 
       setSessions((prev) =>
