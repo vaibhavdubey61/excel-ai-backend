@@ -623,6 +623,8 @@ function openMcqModal(defaultTopic = null) {
     if (!modal) return;
 
     modal.classList.remove("hidden");
+    modal.classList.remove("flex");
+    modal.style.display = "block";
     document.body.classList.add("overflow-hidden");
 
     resetMcqToSetup();
@@ -653,9 +655,19 @@ function openMcqModal(defaultTopic = null) {
 
 function closeMcqModal() {
     const modal = document.getElementById("mcq-modal");
-    if (modal) modal.classList.add("hidden");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        modal.style.display = "none";
+    }
     document.body.classList.remove("overflow-hidden");
     clearInterval(quizTimerInterval);
+}
+
+function handleModalBackdropClick(event) {
+    if (event.target.id === "mcq-modal" || event.target.classList.contains("min-h-full")) {
+        closeMcqModal();
+    }
 }
 
 function selectMcqMode(mode) {
@@ -861,7 +873,7 @@ function renderQuizQuestion(index) {
                 <div class="w-7 h-7 rounded-xl ${badgeClass} text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
                     ${key}
                 </div>
-                <div class="flex-1 text-xs sm:text-sm font-medium leading-relaxed">
+                <div class="flex-1 min-w-0 text-xs sm:text-sm font-medium leading-relaxed break-words">
                     ${escapeHtml(cleanedOpt)}
                 </div>
                 <div class="w-5 h-5 flex items-center justify-center">
@@ -907,8 +919,16 @@ function nextMcqQuestion() {
     }
 }
 
-// Keyboard shortcuts for fun & fast quiz taking
+// Keyboard shortcuts for fun & fast quiz taking & Escape to close
 document.addEventListener("keydown", (e) => {
+    const modal = document.getElementById("mcq-modal");
+    if (e.key === "Escape") {
+        if (modal && modal.style.display !== "none" && !modal.classList.contains("hidden")) {
+            closeMcqModal();
+            return;
+        }
+    }
+
     const quizView = document.getElementById("mcq-quiz-view");
     if (!quizView || quizView.classList.contains("hidden")) return;
     if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")) return;
@@ -1005,9 +1025,9 @@ function submitQuiz() {
             }
 
             return `
-                <div class="px-3.5 py-2.5 rounded-xl border text-xs flex items-center gap-2.5 ${optStyle}">
-                    <span class="font-bold">${k})</span>
-                    <span>${escapeHtml(optText)}</span>
+                <div class="px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm flex items-center gap-2.5 ${optStyle} mcq-review-item">
+                    <span class="font-bold flex-shrink-0">${k})</span>
+                    <span class="mcq-opt-text leading-relaxed">${escapeHtml(optText)}</span>
                     ${tag}
                 </div>
             `;
@@ -1017,27 +1037,27 @@ function submitQuiz() {
         const cleanedExplanation = cleanExamMarkdown(q.explanation || "");
 
         return `
-            <div class="bg-[#212121] border ${borderClass} rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-md">
+            <div class="bg-[#212121] border ${borderClass} rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-md mcq-review-item">
                 <div class="flex items-center justify-between gap-2 border-b border-[#2e2e2e] pb-2.5">
-                    <span class="text-xs font-bold text-white">Question ${idx + 1} of ${total}</span>
+                    <span class="text-xs font-bold text-white uppercase tracking-wider">Question ${idx + 1} of ${total}</span>
                     ${statusBadge}
                 </div>
 
-                <div class="text-xs sm:text-sm font-semibold text-neutral-100 leading-relaxed">
+                <div class="text-sm sm:text-base font-bold text-neutral-100 leading-relaxed mcq-review-item">
                     ${escapeHtml(cleanExamMarkdown(q.question))}
                 </div>
 
-                <div class="space-y-1.5 pt-1">
+                <div class="space-y-2 pt-1">
                     ${optionsHtml}
                 </div>
 
                 <!-- Brief ICAI-Style Reasoning Box -->
-                <div class="mt-3 p-3.5 rounded-xl bg-[#1b261b] border border-emerald-500/30 text-emerald-200 text-xs space-y-1">
-                    <p class="font-bold flex items-center gap-1.5 text-emerald-300 text-[11px] uppercase tracking-wide">
-                        <i data-lucide="lightbulb" class="w-3.5 h-3.5 text-emerald-400"></i>
+                <div class="mt-3 p-3.5 sm:p-4 rounded-xl bg-[#142314] border border-emerald-500/40 text-emerald-100 text-xs sm:text-sm space-y-1.5 mcq-review-item shadow-inner">
+                    <p class="font-bold flex items-center gap-1.5 text-emerald-300 text-xs uppercase tracking-wide">
+                        <i data-lucide="lightbulb" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
                         <span>ICAI-Style Reasoning & Solution</span>
                     </p>
-                    <p class="leading-relaxed text-emerald-100/90 whitespace-pre-wrap">${escapeHtml(cleanedExplanation)}</p>
+                    <p class="mcq-reasoning-box text-emerald-100/95">${escapeHtml(cleanedExplanation)}</p>
                 </div>
             </div>
         `;
