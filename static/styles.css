@@ -132,3 +132,19 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: #505050;
 }
+
+/* Smooth Desktop Sidebar Collapse (ChatGPT Style) */
+@media (min-width: 768px) {
+    #chat-sidebar {
+        transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #chat-sidebar.sidebar-closed-desktop {
+        margin-left: -18rem !important; /* -288px (w-72) */
+    }
+}
+
+/* Question Palette Button Active Ring */
+.mcq-pill-active {
+    ring-offset-2: 2px;
+    box-shadow: 0 0 0 2px #f59e0b;
+}

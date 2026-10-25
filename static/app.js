@@ -28,21 +28,41 @@ function handleKeyDown(event) {
 }
 
 // Toggle Sidebar (Mobile & Desktop)
-function toggleSidebar(open) {
+function toggleSidebar(forceState) {
     const sidebar = document.getElementById("chat-sidebar");
     const backdrop = document.getElementById("sidebar-backdrop");
+    if (!sidebar) return;
 
-    if (open) {
-        sidebar.classList.remove("-translate-x-full");
-        backdrop.classList.remove("hidden");
+    const isMobile = window.innerWidth < 768;
+
+    if (isMobile) {
+        const isClosed = sidebar.classList.contains("-translate-x-full");
+        const nextState = forceState !== undefined ? forceState : isClosed;
+        if (nextState) {
+            sidebar.classList.remove("-translate-x-full");
+            if (backdrop) backdrop.classList.remove("hidden");
+        } else {
+            sidebar.classList.add("-translate-x-full");
+            if (backdrop) backdrop.classList.add("hidden");
+        }
     } else {
-        sidebar.classList.add("-translate-x-full");
-        backdrop.classList.add("hidden");
+        // Desktop collapse / expand
+        const isClosed = sidebar.classList.contains("sidebar-closed-desktop");
+        const nextState = forceState !== undefined ? forceState : isClosed;
+        if (nextState) {
+            sidebar.classList.remove("sidebar-closed-desktop");
+        } else {
+            sidebar.classList.add("sidebar-closed-desktop");
+        }
     }
 }
 
 // Quick Prompt Click
 function usePrompt(text) {
+    if (text.toLowerCase().includes("mcq")) {
+        openMcqModal();
+        return;
+    }
     const input = document.getElementById("chat-input");
     input.value = text;
     autoResize(input);
@@ -481,14 +501,25 @@ function appendAssistantBubble(markdownText, scroll) {
     const cleanedText = cleanExamMarkdown(markdownText);
     const renderedHtml = marked.parse(cleanedText);
 
-    // Check if response mentions MCQs to offer interactive test pill
+    // Check if response mentions MCQs to offer interactive test card
     const isMcqRelated = /(mcq|multiple choice|quiz|practice question)/i.test(cleanedText);
     const mcqPillHtml = isMcqRelated ? `
         <div class="pt-2 pb-1">
-            <button onclick="openMcqModal()" class="inline-flex items-center gap-1.5 text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl transition shadow-sm">
-                <i data-lucide="check-square" class="w-3.5 h-3.5 text-amber-400"></i>
-                <span>Launch Interactive Quiz with Hidden Answers & Score</span>
-            </button>
+            <div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">
+                        <i data-lucide="award" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold text-white">Interactive 10-Question Exam Mode</p>
+                        <p class="text-[11px] text-neutral-400">Test yourself with hidden answers, stopwatch timer, and live scoring</p>
+                    </div>
+                </div>
+                <button onclick="openMcqModal()" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 flex-shrink-0">
+                    <i data-lucide="play" class="w-3.5 h-3.5 fill-slate-950"></i>
+                    <span>Start 10-MCQ Test</span>
+                </button>
+            </div>
         </div>
     ` : "";
 
@@ -583,7 +614,9 @@ let mcqActiveQuiz = null;
 let mcqCurrentIndex = 0;
 let mcqUserAnswers = {};
 let mcqSelectedMode = 'random';
-let mcqSelectedCount = 5;
+let mcqSelectedCount = 10;
+let quizTimerInterval = null;
+let quizSecondsElapsed = 0;
 
 function openMcqModal(defaultTopic = null) {
     const modal = document.getElementById("mcq-modal");
@@ -622,6 +655,7 @@ function closeMcqModal() {
     const modal = document.getElementById("mcq-modal");
     if (modal) modal.classList.add("hidden");
     document.body.classList.remove("overflow-hidden");
+    clearInterval(quizTimerInterval);
 }
 
 function selectMcqMode(mode) {
@@ -656,12 +690,12 @@ function setMcqCount(count) {
     const btn5 = document.getElementById("count-btn-5");
     const btn10 = document.getElementById("count-btn-10");
 
-    if (count === 5) {
-        btn5.className = "flex-1 py-2 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition";
-        btn10.className = "flex-1 py-2 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition";
+    if (count === 10) {
+        if (btn10) btn10.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition flex items-center justify-center gap-1.5 shadow-sm";
+        if (btn5) btn5.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition";
     } else {
-        btn10.className = "flex-1 py-2 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition";
-        btn5.className = "flex-1 py-2 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition";
+        if (btn5) btn5.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border-2 border-amber-500 bg-amber-500/10 text-white transition flex items-center justify-center gap-1.5 shadow-sm";
+        if (btn10) btn10.className = "flex-1 py-2.5 rounded-xl text-xs font-bold border border-[#3a3a3a] bg-[#242424] text-neutral-400 hover:text-white transition";
     }
 }
 
@@ -671,15 +705,17 @@ function resetMcqToSetup() {
     document.getElementById("mcq-results-view").classList.add("hidden");
     document.getElementById("mcq-topic-badge").classList.add("hidden");
 
+    clearInterval(quizTimerInterval);
     mcqActiveQuiz = null;
     mcqCurrentIndex = 0;
     mcqUserAnswers = {};
+    setMcqCount(10);
 
     const startBtn = document.getElementById("start-quiz-btn");
     startBtn.disabled = false;
     startBtn.innerHTML = `
         <i data-lucide="play" class="w-4 h-4 fill-slate-950"></i>
-        <span>Start Interactive Quiz</span>
+        <span>Start 10-Question Interactive Test</span>
     `;
     lucide.createIcons();
 }
@@ -729,6 +765,19 @@ async function startInteractiveQuiz() {
         mcqCurrentIndex = 0;
         mcqUserAnswers = {};
 
+        // Start Stopwatch Timer
+        clearInterval(quizTimerInterval);
+        quizSecondsElapsed = 0;
+        const timerElem = document.getElementById("quiz-timer-text");
+        if (timerElem) timerElem.innerText = "00:00";
+        quizTimerInterval = setInterval(() => {
+            quizSecondsElapsed++;
+            const mins = String(Math.floor(quizSecondsElapsed / 60)).padStart(2, '0');
+            const secs = String(quizSecondsElapsed % 60).padStart(2, '0');
+            const el = document.getElementById("quiz-timer-text");
+            if (el) el.innerText = `${mins}:${secs}`;
+        }, 1000);
+
         // Update topic badge in header
         const badge = document.getElementById("mcq-topic-badge");
         badge.innerText = topic === "Random" ? "Random Exam Test" : (topic.length > 25 ? topic.substring(0, 25) + "..." : topic);
@@ -747,13 +796,19 @@ async function startInteractiveQuiz() {
     }
 }
 
+function jumpToMcqQuestion(index) {
+    if (!mcqActiveQuiz || !mcqActiveQuiz.questions[index]) return;
+    mcqCurrentIndex = index;
+    renderQuizQuestion(index);
+}
+
 function renderQuizQuestion(index) {
     if (!mcqActiveQuiz || !mcqActiveQuiz.questions[index]) return;
 
     const q = mcqActiveQuiz.questions[index];
     const total = mcqActiveQuiz.questions.length;
 
-    // 1. Progress indicators
+    // 1. Progress and Answered Counters
     document.getElementById("quiz-question-counter").innerText = `Question ${index + 1} of ${total}`;
     const answeredCount = Object.keys(mcqUserAnswers).length;
     document.getElementById("quiz-answered-counter").innerText = `${answeredCount} of ${total} answered`;
@@ -761,11 +816,29 @@ function renderQuizQuestion(index) {
     const progressPct = ((index + 1) / total) * 100;
     document.getElementById("quiz-progress-bar").style.width = `${progressPct}%`;
 
-    // 2. Question Text (Cleaned from any LaTeX syntax)
+    // 2. Interactive Numbered Question Palette (1..total)
+    const paletteContainer = document.getElementById("quiz-palette");
+    if (paletteContainer) {
+        paletteContainer.innerHTML = mcqActiveQuiz.questions.map((_, i) => {
+            const isCurrent = i === index;
+            const isAnswered = mcqUserAnswers[i] !== undefined;
+            let pillClass = "w-7 h-7 sm:w-8 sm:h-8 rounded-xl text-xs font-bold transition flex items-center justify-center cursor-pointer ";
+            if (isCurrent) {
+                pillClass += "bg-amber-500 text-slate-950 ring-2 ring-amber-400 shadow-md";
+            } else if (isAnswered) {
+                pillClass += "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 hover:bg-emerald-500/30";
+            } else {
+                pillClass += "bg-[#292929] text-neutral-400 border border-[#3e3e3e] hover:bg-[#333] hover:text-white";
+            }
+            return `<button onclick="jumpToMcqQuestion(${i})" class="${pillClass}" title="Jump to Question ${i+1}">${i+1}</button>`;
+        }).join("");
+    }
+
+    // 3. Question Text (Cleaned from any LaTeX syntax)
     const cleanedQText = cleanExamMarkdown(q.question);
     document.getElementById("quiz-question-text").innerHTML = marked.parse(cleanedQText);
 
-    // 3. Render 4 Options (Answers 100% hidden!)
+    // 4. Render 4 Options (Answers 100% hidden while taking quiz!)
     const optionsContainer = document.getElementById("quiz-options-container");
     const selectedKey = mcqUserAnswers[index];
 
@@ -798,13 +871,13 @@ function renderQuizQuestion(index) {
         `;
     }).join("");
 
-    // 4. Navigation Buttons
+    // 5. Navigation Buttons
     const prevBtn = document.getElementById("quiz-prev-btn");
     prevBtn.disabled = index === 0;
 
     const nextBtn = document.getElementById("quiz-next-btn");
     if (index === total - 1) {
-        nextBtn.innerHTML = `<span>Review & Submit</span><i data-lucide="check" class="w-4 h-4"></i>`;
+        nextBtn.innerHTML = `<span>Submit Test</span><i data-lucide="check" class="w-4 h-4"></i>`;
     } else {
         nextBtn.innerHTML = `<span>Next</span><i data-lucide="chevron-right" class="w-4 h-4"></i>`;
     }
@@ -834,15 +907,35 @@ function nextMcqQuestion() {
     }
 }
 
+// Keyboard shortcuts for fun & fast quiz taking
+document.addEventListener("keydown", (e) => {
+    const quizView = document.getElementById("mcq-quiz-view");
+    if (!quizView || quizView.classList.contains("hidden")) return;
+    if (document.activeElement && (document.activeElement.tagName === "INPUT" || document.activeElement.tagName === "TEXTAREA")) return;
+
+    if (e.key === "1" || e.key.toUpperCase() === "A") selectMcqOption("A");
+    else if (e.key === "2" || e.key.toUpperCase() === "B") selectMcqOption("B");
+    else if (e.key === "3" || e.key.toUpperCase() === "C") selectMcqOption("C");
+    else if (e.key === "4" || e.key.toUpperCase() === "D") selectMcqOption("D");
+    else if (e.key === "ArrowRight") nextMcqQuestion();
+    else if (e.key === "ArrowLeft") prevMcqQuestion();
+});
+
 function submitQuiz() {
     if (!mcqActiveQuiz) return;
     const total = mcqActiveQuiz.questions.length;
     const answeredCount = Object.keys(mcqUserAnswers).length;
 
     if (answeredCount < total) {
-        const confirmSubmit = confirm(`You have answered ${answeredCount} out of ${total} questions. Do you want to submit and view your score now?`);
+        const confirmSubmit = confirm(`You have answered ${answeredCount} of ${total} questions. Do you want to submit and view your score now?`);
         if (!confirmSubmit) return;
     }
+
+    // Stop timer
+    clearInterval(quizTimerInterval);
+    const mins = Math.floor(quizSecondsElapsed / 60);
+    const secs = quizSecondsElapsed % 60;
+    const timeFormatted = `${mins > 0 ? mins + 'm ' : ''}${secs}s`;
 
     // Calculate score
     let correctCount = 0;
@@ -858,18 +951,18 @@ function submitQuiz() {
     document.getElementById("mcq-quiz-view").classList.add("hidden");
     document.getElementById("mcq-results-view").classList.remove("hidden");
 
-    // Score display
+    // Score & Timing display
     document.getElementById("results-score-text").innerText = `${correctCount} / ${total} (${scorePct}%)`;
 
     let feedback = "";
-    if (scorePct === 100) {
-        feedback = "🌟 Perfect Score! Flawless grasp of exam provisions & numerical accuracy.";
-    } else if (scorePct >= 75) {
-        feedback = "👏 Outstanding performance! Strong foundation and conceptual clarity.";
-    } else if (scorePct >= 50) {
-        feedback = "👍 Good attempt. Review the brief ICAI solutions below to resolve minor gaps.";
+    if (scorePct >= 80) {
+        feedback = `🌟 ICAI Ranker Standard! Flawless conceptual mastery and precision (Completed in ${timeFormatted}).`;
+    } else if (scorePct >= 60) {
+        feedback = `🎉 Official Exam Pass Standard! Strong command with minor revisions needed (Completed in ${timeFormatted}).`;
+    } else if (scorePct >= 40) {
+        feedback = `👍 Good Attempt! Review the detailed step-by-step working notes below to boost your score (Completed in ${timeFormatted}).`;
     } else {
-        feedback = "📚 Keep practicing! Study the detailed step-by-step reasoning below to master this topic.";
+        feedback = `📚 Focus Needed! Thoroughly study the ICAI reasoning boxes below to master these concepts (Completed in ${timeFormatted}).`;
     }
     document.getElementById("results-feedback-text").innerText = feedback;
 
@@ -884,13 +977,13 @@ function submitQuiz() {
         let borderClass = "";
 
         if (!isAnswered) {
-            statusBadge = `<span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">⚠ Unattempted</span>`;
+            statusBadge = `<span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">⚠ Unattempted</span>`;
             borderClass = "border-[#383838]";
         } else if (isCorrect) {
-            statusBadge = `<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">✓ Correct (+1 Mark)</span>`;
+            statusBadge = `<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">✓ Correct (+1 Mark)</span>`;
             borderClass = "border-emerald-500/40";
         } else {
-            statusBadge = `<span class="bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold">✗ Incorrect (Selected ${userChoice})</span>`;
+            statusBadge = `<span class="bg-red-500/20 text-red-300 border border-red-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-bold">✗ Incorrect (Selected ${userChoice})</span>`;
             borderClass = "border-red-500/40";
         }
 
@@ -926,7 +1019,7 @@ function submitQuiz() {
         return `
             <div class="bg-[#212121] border ${borderClass} rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-md">
                 <div class="flex items-center justify-between gap-2 border-b border-[#2e2e2e] pb-2.5">
-                    <span class="text-xs font-bold text-white">Question ${idx + 1}</span>
+                    <span class="text-xs font-bold text-white">Question ${idx + 1} of ${total}</span>
                     ${statusBadge}
                 </div>
 

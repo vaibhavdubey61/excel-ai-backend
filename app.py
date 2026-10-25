@@ -37,6 +37,16 @@ if os.path.exists(env_path):
 
 app = FastAPI(title="Excel AI Coach", version="2.0.0")
 
+# Anti-caching middleware: ensures users always receive latest frontend UI and scripts without stale browser caching
+@app.middleware("http")
+async def add_cache_control_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path in ["/", "/admin"] or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # Initialize Cloud Vector Store, Local Fallback, and AI Engine
 cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINECONE_KEY, index_host=PINECONE_HOST)
 local_rag = RAGEngine(storage_dir=STUDY_MATERIALS_DIR)
@@ -126,7 +136,7 @@ async def chat_endpoint(
 
 class MCQGenerateRequest(BaseModel):
     topic: Optional[str] = "Random"
-    count: Optional[int] = 5
+    count: Optional[int] = 10
     level: Optional[str] = "CA_Inter"
 
 
@@ -135,7 +145,7 @@ async def generate_mcq_endpoint(req: MCQGenerateRequest):
     """Generates structured interactive MCQs with options, hidden answers, and brief reasoning."""
     data = await ai.generate_interactive_mcqs(
         topic=req.topic or "Random",
-        count=req.count or 5,
+        count=req.count or 10,
         level=req.level or "CA_Inter"
     )
     return data

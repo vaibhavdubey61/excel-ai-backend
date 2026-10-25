@@ -48,6 +48,26 @@ EXAM PRESENTATION STANDARDS:
      • State variances clearly as (Favourable) or (Adverse) / (F) or (A).
    - NEVER include internal scratchpad hesitation, self-correction monologue, or reasoning trail (e.g., "Wait, let's recalculate carefully...", "No, 4,800 hours...", "Correction in options: ..."). Output ONLY the final, accurate step-by-step working notes without conversational commentary.
 
+5. MCQ & PRACTICE QUESTIONS IN CHAT (STRICT - DO NOT REVEAL ANSWERS):
+   - When a student asks for MCQs, a quiz, or practice questions in chat:
+     • Generate 10 exam-level MCQs (or the requested count) conforming to ICAI / ICSI standards.
+     • For EACH question, output:
+       **Question X:** [Problem scenario or concept]
+       - (A) [Option A]
+       - (B) [Option B]
+       - (C) [Option C]
+       - (D) [Option D]
+     • **STRICTLY DO NOT REVEAL THE CORRECT OPTIONS, WORKING NOTES, OR EXPLANATIONS IN THIS INITIAL RESPONSE!**
+     • Never show the solution or correct answer before the student attempts.
+     • Conclude the message with:
+       "👉 **Your Turn:** Reply with your choices (e.g., *1-A, 2-B, 3-C...*) or click the **MCQ Practice** button at the top to take the interactive test with real-time scoring! Once you submit your choices, I will grade your answers and provide detailed ICAI working notes."
+   - When the student replies with their answers (e.g., "1-A, 2-B" or "My answers are B, C..."):
+     • Compute and display their total score (e.g., **Score: 8 / 10 (80%)**).
+     • For each question, show:
+       - Your Choice: Option X
+       - Correct Choice: Option Y (✓ Correct or ✗ Incorrect)
+       - ICAI Working Note & Calculation: [Clear step-by-step computation without raw LaTeX]
+
 CRITICAL INSTRUCTIONS:
 - Answer with absolute authority, warmth, and precision like a senior faculty member.
 - Do NOT mention internal file names, document paths, or say "According to the study material" or "Based on the uploaded PDF". Deliver the answer directly as authoritative exam knowledge.
@@ -110,13 +130,13 @@ class AIService:
     async def generate_interactive_mcqs(
         self,
         topic: str = "Random",
-        count: int = 5,
+        count: int = 10,
         level: str = "CA_Inter"
     ) -> Dict[str, Any]:
         """Generates structured interactive MCQs with options, hidden answers, and brief reasoning."""
         is_random = not topic or topic.strip().lower() in ["random", "all", "mixed"]
         effective_topic = (
-            "Mixed Commerce Exam Syllabus (Income Tax, GST, Corporate Law, Cost & Management Accounting, Auditing & Ethics)"
+            "Mixed Commerce Exam Syllabus (Income Tax, GST, Corporate Law, Cost & Management Accounting, Auditing & Ethics, Partnership)"
             if is_random
             else topic.strip()
         )
@@ -155,7 +175,8 @@ CRITICAL REQUIREMENTS:
             try:
                 raw_text = await self._call_gemini_api(
                     prompt,
-                    system_instruction="You are a senior ICAI exam paper setter. Output valid JSON only, without any markdown formatting or commentary."
+                    system_instruction="You are a senior ICAI exam paper setter. Output valid JSON only, without any markdown formatting or commentary.",
+                    max_tokens=4096
                 )
                 clean_json_str = raw_text.strip()
                 if clean_json_str.startswith("```json"):
@@ -179,7 +200,8 @@ CRITICAL REQUIREMENTS:
         self,
         prompt: str,
         images: Optional[List[Dict[str, str]]] = None,
-        system_instruction: str = ""
+        system_instruction: str = "",
+        max_tokens: int = 2048
     ) -> str:
         """Calls Gemini with rapid fallback across candidate models to avoid 503 capacity limits."""
         parts: List[Dict[str, Any]] = []
@@ -197,7 +219,7 @@ CRITICAL REQUIREMENTS:
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.2,
-                "maxOutputTokens": 2048,
+                "maxOutputTokens": max_tokens,
             }
         }
 
@@ -286,6 +308,90 @@ CRITICAL REQUIREMENTS:
                 },
                 "correct_option": "B",
                 "explanation": "Under SA 705 (Modifications to the Opinion in the Independent Auditor's Report), an Adverse Opinion is issued when the auditor obtains sufficient appropriate audit evidence and concludes that misstatements, individually or in the aggregate, are both material and pervasive."
+            },
+            {
+                "id": 6,
+                "question": "A and B are partners sharing profits and losses in the ratio 5:3. They admit C and agree to give him 3/10th share of the total profit. What is the new profit-sharing ratio of A, B, and C?",
+                "options": {
+                    "A": "35:42:17",
+                    "B": "35:21:24",
+                    "C": "49:22:29",
+                    "D": "25:15:20"
+                },
+                "correct_option": "B",
+                "explanation": "Total profit = 1. Remaining share = 1 - 3/10 = 7/10. A's new share = 7/10 × 5/8 = 35/80. B's new share = 7/10 × 3/8 = 21/80. C's share = 3/10 = 24/80. New ratio = 35 : 21 : 24."
+            },
+            {
+                "id": 7,
+                "question": "A company sells a product at ₹100 per unit. Variable cost is ₹60 per unit and fixed overheads amount to ₹2,00,000 per annum. What is the Break-Even Point (BEP) in sales revenue?",
+                "options": {
+                    "A": "₹3,33,333",
+                    "B": "₹5,00,000",
+                    "C": "₹6,00,000",
+                    "D": "₹4,00,000"
+                },
+                "correct_option": "B",
+                "explanation": "Contribution per unit = ₹100 - ₹60 = ₹40. P/V Ratio = (₹40 / ₹100) × 100 = 40%. Break-Even Sales = Fixed Cost / P/V Ratio = ₹2,00,000 / 0.40 = ₹5,00,000."
+            },
+            {
+                "id": 8,
+                "question": "Under Section 135(1) of the Companies Act, 2013, which of the following is a mandatory qualifying threshold for a company to constitute a Corporate Social Responsibility (CSR) Committee?",
+                "options": {
+                    "A": "Turnover of ₹500 Crore or more",
+                    "B": "Net Worth of ₹500 Crore or more",
+                    "C": "Paid-up Share Capital of ₹100 Crore or more",
+                    "D": "Net Profit of ₹10 Crore or more"
+                },
+                "correct_option": "B",
+                "explanation": "Under Section 135(1), the CSR threshold triggers if Net Worth >= ₹500 Crore, Turnover >= ₹1,000 Crore, or Net Profit >= ₹5 Crore during the immediately preceding financial year."
+            },
+            {
+                "id": 9,
+                "question": "In working capital management, if raw material storage period is 30 days, WIP conversion period is 15 days, finished goods holding period is 20 days, debtors collection period is 25 days, and creditors payment period is 35 days, what is the Net Operating Cycle?",
+                "options": {
+                    "A": "90 days",
+                    "B": "55 days",
+                    "C": "125 days",
+                    "D": "65 days"
+                },
+                "correct_option": "B",
+                "explanation": "Gross Operating Cycle = 30 + 15 + 20 + 25 = 90 days. Net Operating Cycle = Gross Operating Cycle - Creditors Payment Period = 90 - 35 = 55 days."
+            },
+            {
+                "id": 10,
+                "question": "Under the new default tax regime (Section 115BAC) for Assessment Year 2025-26, what is the standard deduction allowed under Section 16(ia) to a salaried individual?",
+                "options": {
+                    "A": "₹50,000",
+                    "B": "₹75,000",
+                    "C": "₹1,00,000",
+                    "D": "Standard deduction is not permitted"
+                },
+                "correct_option": "B",
+                "explanation": "Under Section 16(ia) as amended for AY 2025-26 under the default tax regime (Section 115BAC), salaried employees and pensioners are entitled to a standard deduction of ₹75,000 (increased from ₹50,000)."
+            },
+            {
+                "id": 11,
+                "question": "According to Accounting Standard 2 (AS 2 - Revised), inventories must be valued at:",
+                "options": {
+                    "A": "Historical Cost only",
+                    "B": "Net Realizable Value only",
+                    "C": "Lower of Cost and Net Realizable Value",
+                    "D": "Replacement Cost"
+                },
+                "correct_option": "C",
+                "explanation": "Paragraph 5 of AS 2 mandates that inventories should be valued at the lower of historical cost and net realizable value (NRV) determined on an item-by-item basis."
+            },
+            {
+                "id": 12,
+                "question": "Under Section 2(d) of the Indian Contract Act, 1872, valid consideration:",
+                "options": {
+                    "A": "Must move from the promisee only",
+                    "B": "May move from the promisee or any other person",
+                    "C": "Must be adequate in monetary terms",
+                    "D": "Cannot be past consideration"
+                },
+                "correct_option": "B",
+                "explanation": "Under Indian law (Chinnaya v. Ramayya), consideration may move from the promisee or any other third person, provided it is at the desire of the promisor."
             }
         ]
         return {
