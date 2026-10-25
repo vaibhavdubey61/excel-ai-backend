@@ -10,6 +10,55 @@ Excel AI Coach is an enterprise-grade AI exam preparation platform custom-built 
 
 ---
 
+## 🏢 Office PC Pickup Instructions (Fast Sync)
+
+To pull the latest updates and run the platform on your **Office PC**, follow whichever scenario applies:
+
+### ⚡ Scenario 1: If the repository is already cloned on your Office PC
+Open Command Prompt or PowerShell in your project folder:
+```cmd
+git pull origin main
+pip install -r requirements.txt
+```
+To launch the local web server:
+```cmd
+run_web_local.bat
+```
+* Student Web Chat: [http://localhost:8000/](http://localhost:8000/)
+* Study Material & Insights Portal: [http://localhost:8000/admin](http://localhost:8000/admin)
+
+---
+
+### 📦 Scenario 2: If setting up fresh on your Office PC
+```cmd
+git clone https://github.com/vaibhavdubey61/excel-ai-backend.git
+cd excel-ai-backend
+copy .env.example .env
+```
+1. Open `.env` in Notepad and verify your API keys (`GEMINI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_HOST`).
+2. Double-click the 1-click setup script:
+   📁 **`setup_new_pc.bat`**  
+   *(Installs Python packages, verifies configuration, and sets up mobile app packages if Node.js is present)*.
+3. Start the server:
+   📁 **`run_web_local.bat`**
+
+---
+
+### 🧪 Office PC Verification Commands
+Verify that your office PC environment passes all 6 phases:
+```cmd
+# 1. Run all 31 automated unit & integration tests
+python -m unittest discover tests
+
+# 2. Run exam evaluation suite (10 standard CA exam questions across levels)
+python scripts/eval_questions.py
+
+# 3. Run Pinecone similarity threshold calibrator
+python scripts/calibrate_threshold.py
+```
+
+---
+
 ## 🏗️ System Architecture & Namespace Routing
 
 Excel AI isolates student courses and levels into distinct Pinecone vector namespaces (`ca-foundation`, `ca-inter`, `ca-final`). Every question is evaluated against the student's level-specific study material before falling back to general knowledge:
