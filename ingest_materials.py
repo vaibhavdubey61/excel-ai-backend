@@ -137,6 +137,35 @@ async def process_pdf(doc_name: str, pdf_bytes: bytes, subject: str) -> Dict[str
         "status": "success"
     }
 
+def update_progress_markdown(catalog: list):
+    md_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "INGESTION_PROGRESS.md")
+    total_docs = len(catalog)
+    total_pages = sum(c.get("pages", 0) for c in catalog)
+    total_chunks = sum(c.get("chunks", 0) for c in catalog)
+    
+    lines = [
+        "# 📚 Excel AI - Study Materials Ingestion Progress",
+        f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "### 📊 Overall Cloud Vector DB Summary",
+        f"- **Total Indexed Documents:** {total_docs}",
+        f"- **Total Pages Processed:** {total_pages}",
+        f"- **Total Vectors in Pinecone Cloud:** {total_chunks}",
+        f"- **Cloud Index:** `excel-ai-materials`",
+        "",
+        "### 📖 Indexed Materials Catalog",
+        "| # | Document Name | Subject | Pages | Pinecone Chunks | Status |",
+        "|---|---|---|---|---|---|"
+    ]
+    for i, doc in enumerate(catalog, 1):
+        lines.append(f"| {i} | {doc.get('doc_name')} | `{doc.get('subject')}` | {doc.get('pages')} | {doc.get('chunks')} | ✅ Indexed |")
+    
+    try:
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception as err:
+        print(f"[Warning writing markdown]: {err}")
+
 async def ingest_source(target_path: str):
     if not os.path.exists(target_path):
         print(f"[Error]: File or folder not found: {target_path}")
@@ -190,6 +219,11 @@ async def ingest_source(target_path: str):
     success_count = 0
     
     for idx, (doc_name, ref_path, reader_fn) in enumerate(docs_to_process, 1):
+        # Skip if already indexed
+        if any(c.get("doc_name") == doc_name and c.get("status") == "success" for c in catalog):
+            print(f"[{idx}/{len(docs_to_process)}] '{doc_name}' is already indexed in Pinecone Cloud. Skipping...")
+            continue
+
         subject = detect_subject(ref_path)
         print(f"[{idx}/{len(docs_to_process)}] Ingesting '{doc_name}' -> Subject: {subject}...")
         
@@ -203,6 +237,14 @@ async def ingest_source(target_path: str):
                 total_chunks += chunks_added
                 print(f"       -> Indexed {res.get('pages')} pages, {chunks_added} chunks into Pinecone Cloud [OK]")
                 catalog.insert(0, res)
+                
+                # Save catalog & markdown progress immediately
+                try:
+                    with open(CATALOG_FILE, "w", encoding="utf-8") as f:
+                        json.dump(catalog, f, indent=2)
+                    update_progress_markdown(catalog)
+                except Exception as e:
+                    print(f"[Warning saving catalog]: {e}")
             else:
                 print(f"       -> Skipped (could not extract text / image-only scan)")
         except Exception as e:
