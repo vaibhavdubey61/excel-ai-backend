@@ -25,7 +25,7 @@ class CloudVectorStore:
             "taskType": task_type,
             "outputDimensionality": 768
         }
-        async with httpx.AsyncClient(timeout=25.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code != 200:
                 raise Exception(f"Embedding error {resp.status_code}: {resp.text}")
@@ -164,7 +164,7 @@ class CloudVectorStore:
         if subject:
             payload["filter"] = {"subject": {"$eq": subject}}
 
-        async with httpx.AsyncClient(timeout=25.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code != 200:
                 raise Exception(f"Pinecone query failed {resp.status_code}: {resp.text}")

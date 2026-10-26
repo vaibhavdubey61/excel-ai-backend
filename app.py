@@ -200,13 +200,31 @@ async def chat_endpoint(
         try:
             raw_chunks = await asyncio.wait_for(
                 cloud_store.query(search_query, namespace=ns, top_k=8),
-                timeout=8.0
+                timeout=4.0
             )
             # Filter by MIN_SCORE (keep at most 5 chunks)
             chunks = [ck for ck in raw_chunks if ck.get("score", 0.0) >= MIN_SCORE][:5]
         except Exception as e:
-            print(f"[Vector DB notice ({ns})]: {e}. Continuing with general knowledge.")
+            print(f"[Vector DB notice ({ns})]: {e}. Checking local knowledge fallback...")
             retrieval_ok = False
+
+        # Fallback to local RAG knowledge base if cloud vector search is unavailable or returns 0 matches
+        if not chunks:
+            try:
+                local_results = local_rag.search(search_query, top_k=5)
+                for lr in local_results:
+                    if lr.get("relevance_score", 0.0) >= 0.12:
+                        chunks.append({
+                            "doc_name": lr.get("doc_name", ""),
+                            "section": lr.get("section", ""),
+                            "content": lr.get("content", ""),
+                            "score": lr.get("relevance_score", 0.0),
+                            "subject": lr.get("subject", "")
+                        })
+                if chunks:
+                    print(f"[Local RAG Fallback]: Found {len(chunks)} relevant excerpts for query.")
+            except Exception as l_err:
+                print(f"[Local RAG notice]: {l_err}")
 
     # 3. Generate response via Gemini (with multi-model fallback and Grounded -> General rules)
     try:

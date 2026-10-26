@@ -228,9 +228,9 @@ def is_forced_internet_query(text: str) -> bool:
     return any(k in t for k in keywords)
 
 CANDIDATE_MODELS = [
+    "gemini-flash-lite-latest",
     "gemini-flash-latest",
-    "gemini-pro-latest",
-    "gemini-flash-lite-latest"
+    "gemini-pro-latest"
 ]
 
 class AIService:
@@ -336,7 +336,7 @@ Student Query:
 {user_query}
 """
                 try:
-                    raw_reply = await self._call_gemini_api(
+                    raw_reply = await self._call_llm(
                         internet_prompt,
                         images=images,
                         system_instruction=internet_system,
@@ -374,7 +374,7 @@ Student Query:
 {user_query}
 """
             try:
-                raw_reply = await self._call_gemini_api(
+                raw_reply = await self._call_llm(
                     grounded_prompt,
                     images=images,
                     system_instruction=grounded_system,
@@ -410,7 +410,7 @@ GENERAL KNOWLEDGE RULES:
 {user_query}
 """
 
-        raw_reply = await self._call_gemini_api(
+        raw_reply = await self._call_llm(
             general_prompt,
             images=images,
             system_instruction=general_system,

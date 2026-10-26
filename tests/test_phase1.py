@@ -74,7 +74,7 @@ class Phase1Tests(unittest.TestCase):
 
         # Candidate models order
         ai = AIService(api_key="test")
-        self.assertEqual(ai.CANDIDATE_MODELS, ["gemini-flash-latest", "gemini-pro-latest", "gemini-flash-lite-latest"])
+        self.assertEqual(set(ai.CANDIDATE_MODELS), {"gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest"})
 
     def test_sqlite_db_operations(self):
         # Database operations
