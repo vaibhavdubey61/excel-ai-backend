@@ -1,7 +1,8 @@
 """
-ICAI BoS (Board of Studies) Automated Web Crawler & Knowledge Base Ingester.
-Crawls official BoS portal webpages, extracts chapter PDF links from resource.cdn.icai.org,
-downloads them locally, and directly indexes them into Pinecone Cloud with level-aware namespaces.
+ICAI BoS (Board of Studies) Comprehensive Knowledge Harvester.
+Crawls official BoS portal for CA Foundation, Inter, and Final (English & Hindi),
+downloads chapter PDFs into organized directories, and indexes them into
+level-segregated Pinecone Cloud namespaces (ca-foundation, ca-inter, ca-final).
 """
 import os
 import re
@@ -11,12 +12,11 @@ import asyncio
 import argparse
 from datetime import datetime
 from urllib.parse import urljoin
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import httpx
 import pypdf
 
-# Adjust path to import project modules
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
@@ -52,6 +52,58 @@ if os.path.exists(env_path):
 cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINECONE_KEY, index_host=PINECONE_HOST)
 CATALOG_FILE = os.path.join(ROOT_DIR, "cloud_catalog.json")
 
+# Preset Official ICAI BoS URLs
+BOS_PRESETS = {
+    "1": {
+        "id": "ca-foundation-en",
+        "title": "CA Foundation (English) - May 2026",
+        "course": "CA",
+        "level": "Foundation",
+        "language": "English",
+        "url": "https://boslive.icai.org/study_material_new_paper_details.php?c=foundation&language=English&year=Applicable%20for%20May%202026%20Exam%20Onwards"
+    },
+    "2": {
+        "id": "ca-foundation-hi",
+        "title": "CA Foundation (Hindi) - 2026",
+        "course": "CA",
+        "level": "Foundation",
+        "language": "Hindi",
+        "url": "https://boslive.icai.org/study_material_new_paper_details.php?c=foundation&language=Hindi&year=Applicable%20for%202026%20Exam%20Onwards"
+    },
+    "3": {
+        "id": "ca-inter-en",
+        "title": "CA Intermediate (English) - May 2026",
+        "course": "CA",
+        "level": "Inter",
+        "language": "English",
+        "url": "https://boslive.icai.org/study_material_new_paper_details.php?c=intermediate&language=English&year=Applicable%20for%20May%202026%20Examination%20Onwards"
+    },
+    "4": {
+        "id": "ca-inter-hi",
+        "title": "CA Intermediate (Hindi) - May 2026",
+        "course": "CA",
+        "level": "Inter",
+        "language": "Hindi",
+        "url": "https://boslive.icai.org/study_material_new_paper_details.php?c=intermediate&language=Hindi&year=Applicable%20for%20May%202026%20Exam%20Onwards"
+    },
+    "5": {
+        "id": "ca-final-en",
+        "title": "CA Final (English) - May 2026",
+        "course": "CA",
+        "level": "Final",
+        "language": "English",
+        "url": "https://boslive.icai.org/study_material_new_paper_details.php?c=final&language=English&year=Applicable%20for%20May%202026%20Exam%20Onwards"
+    },
+    "6": {
+        "id": "ca-final-hi",
+        "title": "CA Final (Hindi) - May 2026",
+        "course": "CA",
+        "level": "Final",
+        "language": "Hindi",
+        "url": "https://boslive.icai.org/study_material_new_paper_details.php?c=final&language=Hindi&year=Applicable%20for%20May%202026%20Exam"
+    }
+}
+
 
 def crawl_bos_page(root_url: str) -> List[Dict[str, str]]:
     """Crawls a BoS syllabus root page down to individual chapter PDF URLs."""
@@ -61,56 +113,74 @@ def crawl_bos_page(root_url: str) -> List[Dict[str, str]]:
     }
     
     print(f"[*] Crawling BoS Root: {root_url}")
-    with httpx.Client(headers=headers, follow_redirects=True, timeout=25.0) as client:
+    with httpx.Client(headers=headers, follow_redirects=True, timeout=30.0) as client:
         r = client.get(root_url)
         if r.status_code != 200:
             raise Exception(f"Failed to fetch BoS page (HTTP {r.status_code})")
 
-        links = re.findall(r'<a\s+[^>]*href=["\'](.*?)["\'][^>]*>(.*?)</a>', r.text, re.DOTALL | re.IGNORECASE)
-        
+        # Discover paper links
+        links = re.findall(r'<a\s+[^>]*href=["\'](sm_module\.php\?module=\d+)["\'][^>]*>(.*?)</a>', r.text, re.IGNORECASE)
+        if not links:
+            # Fallback regex
+            links = re.findall(r'<a\s+[^>]*href=["\'](.*?)["\'][^>]*>(.*?)</a>', r.text, re.IGNORECASE)
+            links = [(h, t) for h, t in links if "sm_module.php" in h]
+
         paper_modules = []
         for href, text in links:
             clean_text = re.sub(r'<[^>]+>', ' ', text).strip()
-            if "sm_module.php" in href:
-                paper_modules.append((clean_text, urljoin(base_url, href)))
+            paper_modules.append((clean_text, urljoin(base_url, href)))
 
         print(f"[*] Discovered {len(paper_modules)} Papers on page.")
         all_chapters = []
 
         for paper_title, p_url in paper_modules:
             print(f"    -> Scanning Paper: {paper_title[:45]}...")
-            pr = client.get(p_url)
-            m_links = re.findall(r'<a\s+[^>]*href=["\'](.*?)["\'][^>]*>(.*?)</a>', pr.text, re.DOTALL | re.IGNORECASE)
-            
-            seen_m = set()
-            modules = []
-            for mh, mt in m_links:
-                mt_clean = re.sub(r'<[^>]+>', ' ', mt).strip()
-                if "sm_chapter_details.php" in mh:
-                    full_murl = urljoin(base_url, mh)
-                    if full_murl not in seen_m:
-                        seen_m.add(full_murl)
-                        modules.append((mt_clean or "Module", full_murl))
+            try:
+                pr = client.get(p_url)
+                m_links = re.findall(r'<a\s+[^>]*href=["\'](.*?)["\'][^>]*>(.*?)</a>', pr.text, re.IGNORECASE)
+                
+                seen_m = set()
+                modules = []
+                for mh, mt in m_links:
+                    mt_clean = re.sub(r'<[^>]+>', ' ', mt).strip()
+                    if "sm_chapter_details.php" in mh:
+                        full_murl = urljoin(base_url, mh)
+                        if full_murl not in seen_m:
+                            seen_m.add(full_murl)
+                            modules.append((mt_clean or "Module", full_murl))
 
-            for mname, murl in modules:
-                cr = client.get(murl)
-                c_links = re.findall(r'<a\s+[^>]*href=["\'](.*?)["\'][^>]*>(.*?)</a>', cr.text, re.DOTALL | re.IGNORECASE)
-                for ch_href, ch_text in c_links:
-                    clean_ch = re.sub(r'<[^>]+>', ' ', ch_text).strip()
-                    if ("cdn.icai.org" in ch_href or ch_href.lower().endswith(".pdf")) and not ch_href.endswith("Schedule_of_BoS_for_your_sucess.pdf"):
-                        full_pdf_url = urljoin(base_url, ch_href)
-                        all_chapters.append({
-                            "paper": paper_title,
-                            "module": mname,
-                            "chapter": clean_ch or os.path.basename(full_pdf_url),
-                            "pdf_url": full_pdf_url
-                        })
+                # If no sm_chapter_details found, check if direct PDFs are on module page
+                if not modules:
+                    for ch_href, ch_text in m_links:
+                        clean_ch = re.sub(r'<[^>]+>', ' ', ch_text).strip()
+                        if ("cdn.icai.org" in ch_href or ch_href.lower().endswith(".pdf")) and not ch_href.endswith("Schedule_of_BoS_for_your_sucess.pdf"):
+                            all_chapters.append({
+                                "paper": paper_title,
+                                "module": "Main",
+                                "chapter": clean_ch or os.path.basename(ch_href),
+                                "pdf_url": urljoin(base_url, ch_href)
+                            })
+
+                for mname, murl in modules:
+                    cr = client.get(murl)
+                    c_links = re.findall(r'<a\s+[^>]*href=["\'](.*?)["\'][^>]*>(.*?)</a>', cr.text, re.IGNORECASE)
+                    for ch_href, ch_text in c_links:
+                        clean_ch = re.sub(r'<[^>]+>', ' ', ch_text).strip()
+                        if ("cdn.icai.org" in ch_href or ch_href.lower().endswith(".pdf")) and not ch_href.endswith("Schedule_of_BoS_for_your_sucess.pdf"):
+                            all_chapters.append({
+                                "paper": paper_title,
+                                "module": mname,
+                                "chapter": clean_ch or os.path.basename(ch_href),
+                                "pdf_url": urljoin(base_url, ch_href)
+                            })
+            except Exception as e:
+                print(f"       [Warning scanning paper]: {e}")
 
     return all_chapters
 
 
-async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, download_dir: str) -> Dict[str, Any]:
-    """Downloads a chapter PDF, extracts text, embeds, and uploads to Pinecone."""
+async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, language: str, download_dir: str) -> Dict[str, Any]:
+    """Downloads a chapter PDF, extracts text, embeds, and uploads to Pinecone namespace."""
     pdf_url = chapter_info["pdf_url"]
     doc_name = os.path.basename(pdf_url)
     chapter_title = chapter_info["chapter"]
@@ -118,7 +188,7 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
     
     # Infer subject name
     subject = detect_subject(f"{paper_title}/{chapter_title}/{doc_name}")
-    save_folder = os.path.join(download_dir, subject)
+    save_folder = os.path.join(download_dir, f"{course}_{level}_{language}", subject)
     os.makedirs(save_folder, exist_ok=True)
     local_pdf_path = os.path.join(save_folder, doc_name)
 
@@ -128,7 +198,7 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
 
     # 1. Download if not present
     if not os.path.exists(local_pdf_path):
-        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=40.0) as client:
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=45.0) as client:
             resp = await client.get(pdf_url)
             if resp.status_code == 200:
                 with open(local_pdf_path, "wb") as f:
@@ -149,17 +219,25 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
             "doc_name": doc_name,
             "chapter": chapter_title,
             "subject": subject,
+            "course": course,
+            "level": level,
+            "language": language,
             "pages": total_pages,
             "chunks": 0,
             "status": "skipped (no readable text)",
             "local_path": local_pdf_path
         }
 
-    # 3. Upsert to Pinecone with exact level namespace
+    # 3. Upsert to Pinecone with exact level namespace (ca-foundation, ca-inter, ca-final)
     ns = syllabus.namespace(course, level)
     batch_size = 20
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i+batch_size]
+        for c in batch:
+            c["course"] = course
+            c["level"] = level
+            c["language"] = language
+            c["chapter"] = chapter_title
         await cloud_store.upsert_chunks(batch, namespace=ns)
         await asyncio.sleep(0.15)
 
@@ -170,6 +248,7 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
         "subject": subject,
         "course": course,
         "level": level,
+        "language": language,
         "pages": total_pages,
         "chunks": len(chunks),
         "uploaded_at": datetime.now().isoformat(),
@@ -186,17 +265,24 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
     return res
 
 
-async def run_pipeline(url: str, course: str = "CA", level: str = "Foundation", download_only: bool = False):
-    print("=" * 70)
-    print("   🎓 EXCEL AI COACH - OFFICIAL ICAI BoS KNOWLEDGE HARVESTER")
-    print("=" * 70)
-    print(f"Target Syllabus: {course} {level}")
-    print(f"BoS URL:         {url}\n")
+async def run_preset(preset: Dict[str, Any], download_only: bool = False):
+    course = preset["course"]
+    level = preset["level"]
+    language = preset["language"]
+    url = preset["url"]
+    title = preset["title"]
+    ns = syllabus.namespace(course, level)
+
+    print("\n" + "=" * 75)
+    print(f"   🎓 EXCEL AI COACH - HARVESTING: {title}")
+    print("=" * 75)
+    print(f"Target Namespace: '{ns}' | Language: {language}")
+    print(f"BoS URL:          {url}\n")
 
     chapters = crawl_bos_page(url)
     print(f"\n[+] Total Official Chapter PDFs Found: {len(chapters)}")
     if not chapters:
-        print("[-] No chapter PDFs found. Please verify the URL.")
+        print(f"[-] No chapter PDFs found for {title}.")
         return
 
     download_dir = os.path.join(ROOT_DIR, "study_materials")
@@ -207,39 +293,87 @@ async def run_pipeline(url: str, course: str = "CA", level: str = "Foundation", 
     total_pages = 0
 
     for idx, ch in enumerate(chapters, 1):
-        print(f"\n[{idx}/{len(chapters)}] Processing: {ch['chapter']} ({os.path.basename(ch['pdf_url'])})")
+        print(f"\n[{idx}/{len(chapters)}] Ingesting: {ch['chapter']} ({os.path.basename(ch['pdf_url'])})")
         print(f"      Paper: {ch['paper']}")
         
         try:
-            res = await ingest_chapter(ch, course=course, level=level, download_dir=download_dir)
+            res = await ingest_chapter(ch, course=course, level=level, language=language, download_dir=download_dir)
             if res.get("status") == "success":
                 success_count += 1
                 chunks_added = res.get("chunks", 0)
                 pages = res.get("pages", 0)
                 total_chunks += chunks_added
                 total_pages += pages
-                print(f"      -> SUCCESS: Indexed {pages} pages ({chunks_added} vectors) into Pinecone namespace '{syllabus.namespace(course, level)}' [OK]")
+                print(f"      -> SUCCESS: {pages} pages ({chunks_added} vectors) in Pinecone namespace '{ns}' [OK]")
             else:
                 print(f"      -> {res.get('status')}")
         except Exception as err:
             print(f"      -> Error: {err}")
 
-    print("\n" + "=" * 70)
-    print(" 🎉 ICAI BoS HARVESTING COMPLETED!")
-    print(f" - Successfully Processed: {success_count} / {len(chapters)} Chapters")
-    print(f" - Total Exam Pages Added: {total_pages}")
-    print(f" - Total Vector Embeddings: {total_chunks}")
-    print(f" - Knowledge Stored In:     Pinecone Cloud ('{syllabus.namespace(course, level)}')")
-    print(f" - Local PDFs Saved In:     c:\\Users\\HC\\Documents\\Excel\\study_materials\\")
-    print("=" * 70)
+    print("\n" + "=" * 75)
+    print(f" COMPLETED {title.upper()}!")
+    print(f" - Indexed: {success_count} / {len(chapters)} Chapters")
+    print(f" - Total Exam Pages: {total_pages}")
+    print(f" - Total Vectors:    {total_chunks} in Pinecone namespace '{ns}'")
+    print("=" * 75)
 
 
-if __name__ == "__main__":
+async def main():
     parser = argparse.ArgumentParser(description="Automate ICAI BoS PDF downloading and Pinecone cloud indexing.")
-    parser.add_argument("--url", default="https://boslive.icai.org/study_material_new_paper_details.php?c=foundation&language=English&year=Applicable%20for%20May%202026%20Exam%20Onwards", help="ICAI BoS webpage URL")
+    parser.add_argument("--preset", choices=list(BOS_PRESETS.keys()) + ["all"], help="Preset number (1-6) or 'all'")
+    parser.add_argument("--url", help="Custom ICAI BoS webpage URL")
     parser.add_argument("--course", default="CA", help="Course (CA, CS, CMA)")
     parser.add_argument("--level", default="Foundation", help="Level (Foundation, Inter, Final)")
-    parser.add_argument("--download-only", action="store_true", help="Only download PDFs to study_materials without embedding")
+    parser.add_argument("--language", default="English", help="Language (English, Hindi)")
+    parser.add_argument("--download-only", action="store_true", help="Only download PDFs without embedding")
     args = parser.parse_args()
 
-    asyncio.run(run_pipeline(url=args.url, course=args.course, level=args.level, download_only=args.download_only))
+    if args.preset == "all":
+        for k in sorted(BOS_PRESETS.keys()):
+            await run_preset(BOS_PRESETS[k], download_only=args.download_only)
+    elif args.preset and args.preset in BOS_PRESETS:
+        await run_preset(BOS_PRESETS[args.preset], download_only=args.download_only)
+    elif args.url:
+        custom_preset = {
+            "title": f"{args.course} {args.level} ({args.language})",
+            "course": args.course,
+            "level": args.level,
+            "language": args.language,
+            "url": args.url
+        }
+        await run_preset(custom_preset, download_only=args.download_only)
+    else:
+        print("=" * 75)
+        print("   🎓 EXCEL AI COACH - OFFICIAL ICAI BoS KNOWLEDGE HARVESTER")
+        print("=" * 75)
+        print("Select syllabus to crawl and ingest into Pinecone Cloud:")
+        for k, v in sorted(BOS_PRESETS.items()):
+            print(f" [{k}] {v['title']}")
+        print(" [7] Harvest ALL (Foundation + Intermediate + Final, English & Hindi)")
+        print(" [8] Enter custom BoS URL")
+        print("=" * 75)
+        choice = input("\nEnter choice [1-8, default is 1]: ").strip() or "1"
+
+        if choice == "7":
+            for k in sorted(BOS_PRESETS.keys()):
+                await run_preset(BOS_PRESETS[k], download_only=args.download_only)
+        elif choice == "8":
+            u = input("Paste ICAI BoS URL: ").strip()
+            c = input("Course (CA/CS/CMA) [default: CA]: ").strip() or "CA"
+            l = input("Level (Foundation/Inter/Final) [default: Foundation]: ").strip() or "Foundation"
+            lang = input("Language (English/Hindi) [default: English]: ").strip() or "English"
+            custom_preset = {
+                "title": f"{c} {l} ({lang})",
+                "course": c,
+                "level": l,
+                "language": lang,
+                "url": u
+            }
+            await run_preset(custom_preset, download_only=args.download_only)
+        elif choice in BOS_PRESETS:
+            await run_preset(BOS_PRESETS[choice], download_only=args.download_only)
+        else:
+            print("Invalid choice. Exiting.")
+
+if __name__ == "__main__":
+    asyncio.run(main())
