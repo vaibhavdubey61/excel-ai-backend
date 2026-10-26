@@ -105,6 +105,73 @@ BOS_PRESETS = {
 }
 
 
+
+def load_catalog() -> List[Dict[str, Any]]:
+    if os.path.exists(CATALOG_FILE):
+        try:
+            with open(CATALOG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_catalog(catalog: List[Dict[str, Any]]):
+    try:
+        with open(CATALOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(catalog, f, indent=2)
+    except Exception as e:
+        print(f"[Warning saving catalog]: {e}")
+
+def update_progress_markdown(catalog: List[Dict[str, Any]]):
+    md_path = os.path.join(ROOT_DIR, "INGESTION_PROGRESS.md")
+    total_docs = len(catalog)
+    total_pages = sum(c.get("pages", 0) for c in catalog)
+    total_chunks = sum(c.get("chunks", 0) for c in catalog)
+    
+    # Level breakdown
+    by_lvl = {}
+    for c in catalog:
+        lvl = c.get("level", "Foundation")
+        by_lvl[lvl] = by_lvl.get(lvl, 0) + 1
+
+    lines = [
+        "# 📚 Excel AI - Study Materials Ingestion Progress",
+        f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "### 📊 Overall Cloud Vector DB Summary",
+        f"- **Total Indexed Documents:** {total_docs}",
+        f"- **Total Pages Processed:** {total_pages}",
+        f"- **Total Vectors in Pinecone Cloud:** {total_chunks}",
+        f"- **Cloud Index:** `excel-ai-materials`",
+        f"- **Level Breakdown:** Foundation: {by_lvl.get('Foundation', 0)} | Inter: {by_lvl.get('Inter', 0)} | Final: {by_lvl.get('Final', 0)}",
+        "",
+        "### 📖 Indexed Materials Catalog",
+        "| # | Document Name | Level | Subject | Pages | Pinecone Chunks | Status |",
+        "|---|---|---|---|---|---|---|"
+    ]
+    for i, doc in enumerate(catalog, 1):
+        lines.append(f"| {i} | {doc.get('doc_name')} | {doc.get('level', 'Foundation')} | `{doc.get('subject')}` | {doc.get('pages')} | {doc.get('chunks')} | ✅ Indexed |")
+    
+    try:
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception as err:
+        print(f"[Warning writing markdown]: {err}")
+
+def push_git_progress():
+    try:
+        import subprocess
+        subprocess.run(["git", "add", "INGESTION_PROGRESS.md", "cloud_catalog.json"], cwd=ROOT_DIR, check=True)
+        subprocess.run(["git", "commit", "-m", "docs: update study materials ingestion progress"], cwd=ROOT_DIR, check=True)
+        # Attempt push (will succeed if credentials available)
+        p = subprocess.run(["git", "push"], cwd=ROOT_DIR, capture_output=True, text=True)
+        if p.returncode == 0:
+            print("[Git]: Progress committed and pushed to GitHub successfully!")
+        else:
+            print("[Git]: Progress committed locally (push deferred).")
+    except Exception as e:
+        print(f"[Git Notice]: {e}")
+
 def crawl_bos_page(root_url: str) -> List[Dict[str, str]]:
     """Crawls a BoS syllabus root page down to individual chapter PDF URLs."""
     base_url = "https://boslive.icai.org/"
@@ -187,7 +254,7 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
     paper_title = chapter_info["paper"]
     
     # Infer subject name
-    subject = detect_subject(f"{paper_title}/{chapter_title}/{doc_name}")
+    subject = detect_subject(f"{paper_title}/{chapter_title}/{doc_name}", course=course, level=level)
     save_folder = os.path.join(download_dir, f"{course}_{level}_{language}", subject)
     os.makedirs(save_folder, exist_ok=True)
     local_pdf_path = os.path.join(save_folder, doc_name)
@@ -258,7 +325,7 @@ async def ingest_chapter(chapter_info: Dict[str, str], course: str, level: str, 
 
     # Save to SQLite database
     try:
-        db.save_material(res)
+        db.insert_material(res) if hasattr(db, "insert_material") else None
     except Exception as e:
         print(f"[DB Notice]: {e}")
 
@@ -288,13 +355,20 @@ async def run_preset(preset: Dict[str, Any], download_only: bool = False):
     download_dir = os.path.join(ROOT_DIR, "study_materials")
     os.makedirs(download_dir, exist_ok=True)
 
+    catalog = load_catalog()
     success_count = 0
     total_chunks = 0
     total_pages = 0
 
     for idx, ch in enumerate(chapters, 1):
-        print(f"\n[{idx}/{len(chapters)}] Ingesting: {ch['chapter']} ({os.path.basename(ch['pdf_url'])})")
+        doc_filename = os.path.basename(ch['pdf_url'])
+        print(f"\n[{idx}/{len(chapters)}] Ingesting: {ch['chapter']} ({doc_filename})")
         print(f"      Paper: {ch['paper']}")
+
+        # Deduplication check against cloud_catalog
+        if any(c.get("doc_name") == doc_filename and c.get("status") == "success" for c in catalog):
+            print(f"      -> '{doc_filename}' is already indexed in Pinecone namespace '{ns}'. Skipping...")
+            continue
         
         try:
             res = await ingest_chapter(ch, course=course, level=level, language=language, download_dir=download_dir)
@@ -305,6 +379,11 @@ async def run_preset(preset: Dict[str, Any], download_only: bool = False):
                 total_chunks += chunks_added
                 total_pages += pages
                 print(f"      -> SUCCESS: {pages} pages ({chunks_added} vectors) in Pinecone namespace '{ns}' [OK]")
+                
+                # Update catalog and INGESTION_PROGRESS.md immediately
+                catalog.insert(0, res)
+                save_catalog(catalog)
+                update_progress_markdown(catalog)
             else:
                 print(f"      -> {res.get('status')}")
         except Exception as err:
@@ -316,6 +395,7 @@ async def run_preset(preset: Dict[str, Any], download_only: bool = False):
     print(f" - Total Exam Pages: {total_pages}")
     print(f" - Total Vectors:    {total_chunks} in Pinecone namespace '{ns}'")
     print("=" * 75)
+    push_git_progress()
 
 
 async def main():

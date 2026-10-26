@@ -2,6 +2,8 @@ import os
 import json
 import base64
 import re
+import html
+import asyncio
 from typing import Dict, Any, List, Optional
 import httpx
 from pydantic import BaseModel, Field, field_validator
@@ -187,6 +189,44 @@ def clean_student_reply(text: str) -> str:
         cleaned_lines.append(line)
     return "\n".join(cleaned_lines).strip()
 
+def perform_web_search(query: str, max_results: int = 4) -> List[Dict[str, str]]:
+    """Performs live web search for recent exam notifications, amendments, or missing syllabus topics."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            r = client.post("https://html.duckduckgo.com/html/", data={"q": query}, headers=headers)
+            if r.status_code != 200:
+                return []
+            blocks = r.text.split('class="result ')
+            results = []
+            for b in blocks[1:]:
+                t_m = re.search(r'<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)</a>', b)
+                title_m = re.search(r'<h2[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)</a>', b)
+                title = html.unescape(re.sub(r'<[^>]+>', '', title_m.group(1)).strip()) if title_m else "Web Result"
+                snippet = html.unescape(re.sub(r'<[^>]+>', '', t_m.group(1)).strip()) if t_m else ""
+                if snippet:
+                    results.append({"title": title, "snippet": snippet})
+                if len(results) >= max_results:
+                    break
+            return results
+    except Exception as e:
+        print(f"[Web search warning]: {e}")
+        return []
+
+def is_forced_internet_query(text: str) -> bool:
+    """Detects whether student explicitly requests web / internet search or latest external notifications."""
+    t = (text or "").lower()
+    keywords = [
+        "search internet", "search the internet", "search web", "search the web",
+        "browse internet", "browse the web", "look up online", "search online",
+        "google it", "check internet", "internet research", "web research",
+        "latest notification", "latest circular", "recent notification", "exam date", "exam dates",
+        "announcement", "press release"
+    ]
+    return any(k in t for k in keywords)
+
 CANDIDATE_MODELS = [
     "gemini-flash-latest",
     "gemini-pro-latest",
@@ -198,6 +238,9 @@ class AIService:
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.preferred_llm = os.getenv("PREFERRED_LLM", "gemini").lower()
         self.models = CANDIDATE_MODELS
         self.last_model_used: str = CANDIDATE_MODELS[0]
 
@@ -214,7 +257,7 @@ class AIService:
         prompt = "Extract and transcribe the main question, problem statement, or doubt shown in this image. Output only the plain text question without commentary."
         images = [{"mime_type": mime_type, "data": image_base64}]
         try:
-            res = await self._call_gemini_api(prompt, images=images, max_tokens=1024)
+            res = await self._call_llm(prompt, images=images, max_tokens=1024)
             return res.strip()
         except Exception as e:
             print(f"[Image Text Extraction Error]: {e}")
@@ -261,6 +304,52 @@ COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a cla
             })
 
         user_query = message.strip() if message else "Please evaluate this student submission."
+        # Check if user explicitly forces internet / external research
+        forced_internet = is_forced_internet_query(user_query)
+
+        # 1. If forced internet research requested:
+        if forced_internet:
+            web_results = []
+            try:
+                search_term = f"ICAI {course} {level} {user_query}" if not any(w in user_query.lower() for w in ["icai", "icsi", "icmai"]) else user_query
+                loop = asyncio.get_running_loop()
+                web_results = await loop.run_in_executor(None, perform_web_search, search_term, 4)
+            except Exception as ws_err:
+                print(f"[Web search execution error]: {ws_err}")
+
+            if web_results:
+                web_excerpts = "\n\n".join([f"[{i+1}] {r['title']}:\n{r['snippet']}" for i, r in enumerate(web_results)])
+                internet_system = f"""{SYSTEM_PROMPT}
+
+{level_context}
+
+INTERNET RESEARCH RULES:
+- The student query specifically requested online research or recent external updates.
+- Synthesize an authoritative faculty response using the live web research findings below combined with standard {course} {level} statutory provisions.
+- Complete answers in ONE response. Do NOT include phrases like 'according to web search' or 'online results say'.
+- State legal sections, notifications, or practical rules clearly first; exam guidance at the very end.
+"""
+                internet_prompt = f"""{history_text}[Live Internet Research Findings]:
+{web_excerpts}
+
+Student Query:
+{user_query}
+"""
+                try:
+                    raw_reply = await self._call_gemini_api(
+                        internet_prompt,
+                        images=images,
+                        system_instruction=internet_system,
+                        max_tokens=8192
+                    )
+                    return {
+                        "reply": clean_student_reply(raw_reply),
+                        "source": "internet",
+                        "top_score": float(top_score),
+                        "model_used": self.last_model_used
+                    }
+                except Exception as err:
+                    print(f"[Internet answer error]: {err}. Falling back to general knowledge.")
 
         # STEP 1: Grounded answer from study material excerpts if available
         if context_chunks and len(context_chunks) > 0:
@@ -292,7 +381,7 @@ Student Query:
                     max_tokens=8192
                 )
                 clean_reply = raw_reply.strip()
-                # Check if Gemini output NOT_IN_MATERIAL
+                # Check if model output NOT_IN_MATERIAL
                 if clean_reply.startswith("NOT_IN_MATERIAL") or clean_reply == "NOT_IN_MATERIAL":
                     print("[Grounded Check]: Excerpts do not cover query (NOT_IN_MATERIAL). Falling back to general knowledge.")
                 else:
@@ -467,7 +556,7 @@ CRITICAL REQUIREMENTS:
             return validated
 
         # Attempt 1
-        raw_output = await self._call_gemini_api(
+        raw_output = await self._call_llm(
             prompt,
             system_instruction=system_inst,
             max_tokens=8192,
@@ -488,7 +577,7 @@ CRITICAL REQUIREMENTS:
                 f"- 'correct_answer': 'A', 'B', 'C', or 'D'\n"
                 f"- 'explanation': string\n"
             )
-            raw_output_retry = await self._call_gemini_api(
+            raw_output_retry = await self._call_llm(
                 corrective_prompt,
                 system_instruction=system_inst,
                 max_tokens=8192,
@@ -520,6 +609,68 @@ CRITICAL REQUIREMENTS:
             "questions": final_questions,
             "source": source
         }
+
+    async def _call_openai_api(
+        self,
+        prompt: str,
+        system_instruction: str = "",
+        max_tokens: int = 4096,
+        json_mode: bool = False
+    ) -> str:
+        """Direct, lightweight OpenAI ChatGPT call via httpx without extra dependencies."""
+        if not self.openai_api_key:
+            raise Exception("OPENAI_API_KEY is not configured.")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.openai_api_key}",
+            "Content-Type": "application/json"
+        }
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+
+        payload: Dict[str, Any] = {
+            "model": self.openai_model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": max_tokens
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                self.last_model_used = f"openai/{self.openai_model}"
+                return data["choices"][0]["message"]["content"]
+            else:
+                raise Exception(f"OpenAI error {resp.status_code}: {resp.text}")
+
+    async def _call_llm(
+        self,
+        prompt: str,
+        images: Optional[List[Dict[str, str]]] = None,
+        system_instruction: str = "",
+        max_tokens: int = 8192,
+        json_mode: bool = False
+    ) -> str:
+        """Routes to preferred LLM (Gemini or OpenAI) with automatic fallback between providers."""
+        if self.preferred_llm == "openai" and self.openai_api_key:
+            try:
+                return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+            except Exception as e:
+                print(f"[OpenAI Call Notice]: {e}. Falling back to Gemini.")
+                return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+        else:
+            try:
+                return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+            except Exception as e:
+                if self.openai_api_key:
+                    print(f"[Gemini Call Notice]: {e}. Falling back to OpenAI ({self.openai_model}).")
+                    return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+                raise
 
     async def _call_gemini_api(
         self,
@@ -559,7 +710,11 @@ CRITICAL REQUIREMENTS:
             }
 
         last_error = None
-        for model in self.models:
+        models_to_try = list(self.models)
+        for extra in ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-1.5-flash"]:
+            if extra not in models_to_try:
+                models_to_try.append(extra)
+        for model in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
             try:
                 async with httpx.AsyncClient(timeout=45.0) as client:

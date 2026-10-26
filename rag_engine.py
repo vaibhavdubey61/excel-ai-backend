@@ -105,13 +105,15 @@ SAMPLE_KNOWLEDGE_BASE = [
 
 
 class RAGEngine:
-    def __init__(self, storage_dir: str = STUDY_MATERIALS_DIR):
+    def __init__(self, storage_dir: str = STUDY_MATERIALS_DIR, auto_load: bool = False):
         self.storage_dir = storage_dir
-        self.chunks: List[Dict[str, Any]] = []
+        self.chunks: List[Dict[str, Any]] = list(SAMPLE_KNOWLEDGE_BASE)
         self.vectorizer: Optional[TfidfVectorizer] = None
         self.tfidf_matrix = None
         os.makedirs(self.storage_dir, exist_ok=True)
-        self.load_all_materials()
+        self._fit_vectorizer()
+        if auto_load:
+            self.load_all_materials()
 
     def get_subject_folders(self) -> List[str]:
         """Returns list of all subject folders inside study_materials."""
@@ -166,6 +168,12 @@ class RAGEngine:
             chunks.append(chunk)
             start += chunk_size - overlap
         return chunks
+
+    def _fit_vectorizer(self):
+        if self.chunks:
+            corpus = [f"{c['subject']} {c.get('section', '')} {c['content']}" for c in self.chunks]
+            self.vectorizer = TfidfVectorizer(stop_words='english', max_features=10000, ngram_range=(1, 2))
+            self.tfidf_matrix = self.vectorizer.fit_transform(corpus)
 
     def load_all_materials(self):
         """Loads and indexes both prepackaged sample knowledge and all uploaded PDFs."""
