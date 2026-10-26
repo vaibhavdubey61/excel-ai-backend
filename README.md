@@ -10,6 +10,55 @@ Excel AI Coach is an enterprise-grade AI exam preparation platform custom-built 
 
 ---
 
+## 🏠 Home PC Pickup & Testing Guide (Resume & Continue)
+
+When switching back to your **Home PC**, follow these steps:
+
+### 1. Pull Latest Updates from GitHub
+```cmd
+git pull origin main
+```
+
+### 2. Run the Live Verification Suite
+We built an automated test runner that verifies all 5 core subsystems in ~15 seconds:
+```cmd
+python scripts/run_live_suite.py
+```
+This tests:
+* `[Test 1]` Health check (`GET /api/health`)
+* `[Test 2]` CA Foundation Chat (`BRS` grounding)
+* `[Test 3]` CA Intermediate Chat (`Section 68 Buyback` grounding)
+* `[Test 4]` Live Web Research Fallback (`DuckDuckGo` search & synthesis)
+* `[Test 5]` Interactive MCQ Generation (`CA Inter Law` 3 MCQs with Pydantic JSON validation)
+
+### 3. Launch Local Server
+```cmd
+run_web_local.bat
+# Or manually:
+python -m uvicorn app:app --port 8000
+```
+* **Student Web Interface:** [http://localhost:8000/](http://localhost:8000/)
+* **Study Material & Admin Insights:** [http://localhost:8000/admin](http://localhost:8000/admin)
+
+### 4. ICAI Study Material Ingestion Status & Resuming
+* **Ingestion Milestone Reached:** 44 Documents Indexed | 1,436 Pages Processed | 2,127 Cloud Vectors in Pinecone.
+* **CA Foundation (English):** 100% COMPLETE (18 chapters, 532 pages, 844 vectors in `ca-foundation`).
+* **CA Intermediate (English):** 14 Chapters/Modules Indexed (Advanced Accounting & Corporate Law in `ca-inter`).
+* **All 143 Chapter PDFs permanently stored on local disk** in `study_materials/`.
+* When Google's daily embedding quota resets (at midnight UTC) or with a fresh key in `.env`:
+```cmd
+# Continue indexing remaining CA Intermediate (English) chapters:
+python scripts/ingest_icai_bos.py --preset 3
+
+# Harvest & index CA Final (English) chapters:
+python scripts/ingest_icai_bos.py --preset 5
+
+# Index CA Foundation (Hindi Medium):
+python scripts/ingest_icai_bos.py --preset 2
+```
+
+---
+
 ## 🏢 Office PC Pickup Instructions (Fast Sync)
 
 To pull the latest updates and run the platform on your **Office PC**, follow whichever scenario applies:
