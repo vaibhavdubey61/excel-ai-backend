@@ -35,12 +35,13 @@ class CloudVectorStore:
     embed_query = get_embedding
 
     async def embed_batch(self, texts: List[str], task_type: str = "RETRIEVAL_DOCUMENT") -> List[List[float]]:
-        """Generates embeddings for a batch of texts using batchEmbedContents (up to 100 per API request)."""
+        """Generates embeddings for a batch of texts using batchEmbedContents with 429 backoff retry."""
         if not texts:
             return []
 
+        import asyncio
         all_embeddings: List[List[float]] = []
-        batch_size = 100
+        batch_size = 25  # 25 chunks (~7,000 tokens) safely below free tier 30,000 TPM limit
 
         for i in range(0, len(texts), batch_size):
             chunk_texts = texts[i:i + batch_size]
@@ -58,23 +59,37 @@ class CloudVectorStore:
             ]
 
             batch_succeeded = False
-            try:
-                async with httpx.AsyncClient(timeout=45.0) as client:
-                    resp = await client.post(url, json={"requests": requests})
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        embs = [item["values"] for item in data.get("embeddings", [])]
-                        if len(embs) == len(chunk_texts):
-                            all_embeddings.extend(embs)
-                            batch_succeeded = True
-            except Exception as e:
-                print(f"[batchEmbedContents notice: falling back to individual calls]: {e}")
+            for attempt in range(3):
+                try:
+                    async with httpx.AsyncClient(timeout=45.0) as client:
+                        resp = await client.post(url, json={"requests": requests})
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            embs = [item["values"] for item in data.get("embeddings", [])]
+                            if len(embs) == len(chunk_texts):
+                                all_embeddings.extend(embs)
+                                batch_succeeded = True
+                                break
+                        elif resp.status_code == 429:
+                            wait_sec = 6 * (attempt + 1)
+                            print(f"[Rate limit 429 on embedding]: Pausing {wait_sec}s for quota window to reset...")
+                            await asyncio.sleep(wait_sec)
+                        else:
+                            print(f"[Embedding HTTP {resp.status_code}]: {resp.text[:80]}")
+                            break
+                except Exception as e:
+                    print(f"[batchEmbedContents retry notice]: {e}")
+                    await asyncio.sleep(2)
 
             if not batch_succeeded:
-                # Fallback to sequential get_embedding if batch request fails
+                # Fallback to sequential get_embedding with delay
                 for t in chunk_texts:
                     emb = await self.get_embedding(t, task_type=task_type)
                     all_embeddings.append(emb)
+                    await asyncio.sleep(0.15)
+
+            # Polite 350ms pause between batches to protect TPM quota
+            await asyncio.sleep(0.35)
 
         return all_embeddings
 

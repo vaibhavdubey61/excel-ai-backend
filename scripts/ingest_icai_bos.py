@@ -7,6 +7,8 @@ level-segregated Pinecone Cloud namespaces (ca-foundation, ca-inter, ca-final).
 import os
 import re
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 import json
 import asyncio
 import argparse
@@ -135,22 +137,22 @@ def update_progress_markdown(catalog: List[Dict[str, Any]]):
         by_lvl[lvl] = by_lvl.get(lvl, 0) + 1
 
     lines = [
-        "# 📚 Excel AI - Study Materials Ingestion Progress",
+        "# [INFO] Excel AI - Study Materials Ingestion Progress",
         f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
-        "### 📊 Overall Cloud Vector DB Summary",
+        "### [STATS] Overall Cloud Vector DB Summary",
         f"- **Total Indexed Documents:** {total_docs}",
         f"- **Total Pages Processed:** {total_pages}",
         f"- **Total Vectors in Pinecone Cloud:** {total_chunks}",
         f"- **Cloud Index:** `excel-ai-materials`",
         f"- **Level Breakdown:** Foundation: {by_lvl.get('Foundation', 0)} | Inter: {by_lvl.get('Inter', 0)} | Final: {by_lvl.get('Final', 0)}",
         "",
-        "### 📖 Indexed Materials Catalog",
+        "### [CATALOG] Indexed Materials Catalog",
         "| # | Document Name | Level | Subject | Pages | Pinecone Chunks | Status |",
         "|---|---|---|---|---|---|---|"
     ]
     for i, doc in enumerate(catalog, 1):
-        lines.append(f"| {i} | {doc.get('doc_name')} | {doc.get('level', 'Foundation')} | `{doc.get('subject')}` | {doc.get('pages')} | {doc.get('chunks')} | ✅ Indexed |")
+        lines.append(f"| {i} | {doc.get('doc_name')} | {doc.get('level', 'Foundation')} | `{doc.get('subject')}` | {doc.get('pages')} | {doc.get('chunks')} | [OK] Indexed |")
     
     try:
         with open(md_path, "w", encoding="utf-8") as f:
@@ -341,7 +343,7 @@ async def run_preset(preset: Dict[str, Any], download_only: bool = False):
     ns = syllabus.namespace(course, level)
 
     print("\n" + "=" * 75)
-    print(f"   🎓 EXCEL AI COACH - HARVESTING: {title}")
+    print(f"   [ICAI] EXCEL AI COACH - HARVESTING: {title}")
     print("=" * 75)
     print(f"Target Namespace: '{ns}' | Language: {language}")
     print(f"BoS URL:          {url}\n")
@@ -424,7 +426,7 @@ async def main():
         await run_preset(custom_preset, download_only=args.download_only)
     else:
         print("=" * 75)
-        print("   🎓 EXCEL AI COACH - OFFICIAL ICAI BoS KNOWLEDGE HARVESTER")
+        print("   [ICAI] EXCEL AI COACH - OFFICIAL ICAI BoS KNOWLEDGE HARVESTER")
         print("=" * 75)
         print("Select syllabus to crawl and ingest into Pinecone Cloud:")
         for k, v in sorted(BOS_PRESETS.items()):
