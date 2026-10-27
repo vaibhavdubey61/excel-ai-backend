@@ -1,0 +1,2629 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpsPulse - Operations Management & Client Journey Dashboard</title>
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    /* ======================================================== */
+    /* LIGHT THEME (DEFAULT) & MODERN OPERATIONS DESIGN SYSTEM   */
+    /* ======================================================== */
+    :root, [data-theme="light"] {
+      --bg: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-input: #f8fafc;
+      --border: #e2e8f0;
+      --border-subtle: #cbd5e1;
+      --text-main: #0f172a;
+      --text-body: #334155;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.08);
+      
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --accent-blue: #0284c7;
+      --accent-blue-bg: #f0f9ff;
+      --accent-green: #16a34a;
+      --accent-green-bg: #f0fdf4;
+      --accent-dark: #334155;
+      --accent-dark-bg: #f8fafc;
+      --accent-purple: #9333ea;
+      --accent-purple-bg: #faf5ff;
+      --accent-red: #ef4444;
+      --accent-red-bg: #fef2f2;
+      --timeline-axis: #cbd5e1;
+      
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    /* DARK THEME (OPTIONAL VIA TOGGLE) */
+    [data-theme="dark"] {
+      --bg: #090d16;
+      --bg-surface: #0f172a;
+      --bg-card: #141e33;
+      --bg-card-hover: #1b2742;
+      --bg-input: #0b1120;
+      --border: #1e293b;
+      --border-subtle: #24324a;
+      --text-main: #f1f5f9;
+      --text-body: #cbd5e1;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --shadow-sm: 0 2px 4px rgba(0,0,0,0.2);
+      --shadow-md: 0 4px 14px rgba(0,0,0,0.35);
+      --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+      --timeline-axis: #334155;
+      --primary-light: rgba(37, 99, 235, 0.15);
+      --accent-blue-bg: rgba(2, 132, 199, 0.1);
+      --accent-green-bg: rgba(22, 163, 74, 0.1);
+      --accent-dark-bg: rgba(51, 65, 85, 0.2);
+      --accent-purple-bg: rgba(147, 51, 234, 0.1);
+      --accent-red-bg: rgba(239, 68, 68, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-subtle);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-dim);
+    }
+
+    /* Header Nav */
+    header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.85rem 1.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .logo-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .brand-badge {
+      font-size: 0.685rem;
+      font-weight: 700;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid rgba(37, 99, 235, 0.25);
+      padding: 2px 7px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .view-toggle {
+      display: flex;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      padding: 3px;
+      border-radius: 10px;
+      gap: 2px;
+    }
+
+    .view-btn {
+      padding: 6px 14px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      border-radius: 7px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .view-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      font-family: var(--font-main);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-surface);
+      color: var(--text-body);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-subtle);
+    }
+
+    .btn-danger {
+      background: var(--accent-red-bg);
+      color: var(--accent-red);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 0.775rem;
+      border-radius: 6px;
+    }
+
+    .client-select {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      min-width: 175px;
+      box-shadow: var(--shadow-sm);
+    }
+    .client-select:focus {
+      border-color: var(--primary);
+    }
+
+    .theme-toggle-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .theme-toggle-btn:hover {
+      color: var(--text-main);
+      background: var(--bg-card-hover);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1540px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.35rem;
+    }
+
+    /* Top Live Ops Status Banner */
+    .live-alert-bar {
+      background: linear-gradient(90deg, #fff1f2, #fef3c7, #eff6ff);
+      border: 1px solid #fecdd3;
+      border-radius: 12px;
+      padding: 0.8rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      font-size: 0.85rem;
+      box-shadow: var(--shadow-sm);
+    }
+    [data-theme="dark"] .live-alert-bar {
+      background: linear-gradient(90deg, rgba(239, 68, 68, 0.12), rgba(245, 158, 11, 0.08), rgba(59, 130, 246, 0.08));
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+
+    .live-alert-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    /* ========================================================= */
+    /* SINGLE CLIENT DETAILED DASHBOARD (THE SKETCH IMPLEMENTATION) */
+    /* ========================================================= */
+    .client-detail-view {
+      display: flex;
+      flex-direction: column;
+      gap: 1.35rem;
+    }
+
+    /* Client Header & Details Bar */
+    .client-detail-header {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem 1.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .client-badge-large {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2563eb, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+
+    .header-info-col h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      margin-top: 0.35rem;
+      font-size: 0.825rem;
+      color: var(--text-muted);
+    }
+    .header-meta strong {
+      color: var(--text-body);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 0.725rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .status-active {
+      background: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+    }
+    .status-blocked {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+      animation: alertGlow 2s infinite ease-in-out;
+    }
+    .status-onboarding {
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+    }
+    @keyframes alertGlow {
+      0%, 100% { border-color: #fecaca; }
+      50% { border-color: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.25); }
+    }
+
+    /* Active Blocker Alert Banner */
+    .client-active-blockers {
+      background: #fff5f5;
+      border: 1.5px solid #fca5a5;
+      border-radius: 12px;
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      box-shadow: var(--shadow-sm);
+    }
+    [data-theme="dark"] .client-active-blockers {
+      background: linear-gradient(90deg, rgba(220, 38, 38, 0.18), rgba(185, 28, 28, 0.08));
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .blocker-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: #b91c1c;
+    }
+    .blocker-desc {
+      font-size: 0.8rem;
+      color: #475569;
+    }
+
+    /* ========================================================= */
+    /* TIMELINE SECTION (MATCHING THE USER'S HORIZONTAL LINE)    */
+    /* ========================================================= */
+    .timeline-section-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .timeline-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .timeline-title-area {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .timeline-title-area h2 {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .timeline-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    /* Horizontal interactive timeline container */
+    .timeline-container {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 3rem 2rem 2.5rem 2rem;
+      overflow-x: auto;
+      position: relative;
+      min-height: 250px;
+    }
+
+    .timeline-track-wrapper {
+      min-width: 860px;
+      position: relative;
+      padding-bottom: 2rem;
+    }
+
+    /* The Black/Dark horizontal line drawn by user in sketch */
+    .timeline-horizontal-axis {
+      position: absolute;
+      top: 52px;
+      left: 30px;
+      right: 30px;
+      height: 5px;
+      background: var(--timeline-axis);
+      border-radius: 3px;
+      z-index: 1;
+    }
+
+    .timeline-progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #2563eb);
+      border-radius: 3px;
+      width: 55%;
+      transition: width 0.4s ease;
+    }
+
+    .timeline-nodes {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      position: relative;
+      z-index: 2;
+      padding: 0 20px;
+    }
+
+    .timeline-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      position: relative;
+      max-width: 140px;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+    .timeline-node:hover {
+      transform: translateY(-2px);
+    }
+
+    .timeline-month-badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      padding: 2px 7px;
+      border-radius: 5px;
+      margin-bottom: 6px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    /* Vertical tick marker matching user sketch */
+    .timeline-tick {
+      width: 4px;
+      height: 32px;
+      border-radius: 2px;
+      background: var(--border-subtle);
+      margin-bottom: 8px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .timeline-tick.tick-red {
+      background: #ef4444;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+    }
+    .timeline-tick.tick-blue {
+      background: #0284c7;
+      box-shadow: 0 0 8px rgba(2, 132, 199, 0.4);
+    }
+    .timeline-tick.tick-green {
+      background: #16a34a;
+      box-shadow: 0 0 8px rgba(22, 163, 74, 0.4);
+    }
+    .timeline-tick.tick-blocker {
+      background: #dc2626;
+      width: 6px;
+      box-shadow: 0 0 12px rgba(220, 38, 38, 0.7);
+      animation: pulseTick 1.5s infinite;
+    }
+    @keyframes pulseTick {
+      0%, 100% { transform: scaleY(1); opacity: 1; }
+      50% { transform: scaleY(1.2); opacity: 0.85; }
+    }
+
+    .timeline-pin {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--bg-surface);
+      border: 3px solid var(--border-subtle);
+      position: absolute;
+      top: 45px;
+      z-index: 3;
+      transition: all 0.2s ease;
+    }
+    .timeline-node:hover .timeline-pin {
+      transform: scale(1.25);
+    }
+    .timeline-node.status-done .timeline-pin {
+      border-color: #ef4444;
+      background: #ef4444;
+    }
+    .timeline-node.status-payment .timeline-pin {
+      border-color: #0284c7;
+      background: #0284c7;
+    }
+    .timeline-node.status-blocker .timeline-pin {
+      border-color: #dc2626;
+      background: #dc2626;
+      box-shadow: 0 0 10px #dc2626;
+    }
+
+    .timeline-node-card {
+      margin-top: 36px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      width: 135px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+    .timeline-node-card:hover {
+      box-shadow: var(--shadow-md);
+      border-color: var(--border-subtle);
+    }
+
+    .timeline-node-title {
+      font-size: 0.825rem;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.25;
+    }
+
+    .timeline-node-date {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .timeline-node-tag {
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      margin-top: 3px;
+      display: inline-block;
+      align-self: flex-start;
+    }
+    .tag-red {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .tag-blue {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+    .tag-green {
+      background: #dcfce7;
+      color: #15803d;
+    }
+    .tag-blocker {
+      background: #dc2626;
+      color: #ffffff;
+      animation: alertGlow 1.5s infinite;
+    }
+
+    .node-delete-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #ef4444;
+      color: #ffffff;
+      border: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+    }
+    .timeline-node-card:hover .node-delete-btn {
+      display: flex;
+    }
+
+    /* ========================================================= */
+    /* 4-COLUMN CARDS SECTION (MATCHING USER'S EXACT 4 BOXES)   */
+    /* 1. Milestones (Blue)                                     */
+    /* 2. Upcoming (Green)                                      */
+    /* 3. Dump (Black/Dark)                                     */
+    /* 4. Notes (Purple)                                        */
+    /* ========================================================= */
+    .quad-columns-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      align-items: stretch;
+    }
+
+    @media (max-width: 1200px) {
+      .quad-columns-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 680px) {
+      .quad-columns-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .quad-column {
+      background: var(--bg-surface);
+      border-radius: 16px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      min-height: 480px;
+      position: relative;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Color borders directly matching the user's sketch! */
+    .col-milestones {
+      border: 2px solid var(--accent-blue);
+      background: var(--bg-surface);
+    }
+    .col-upcoming {
+      border: 2px solid var(--accent-green);
+      background: var(--bg-surface);
+    }
+    .col-dump {
+      border: 2px solid var(--accent-dark);
+      background: var(--bg-surface);
+    }
+    .col-notes {
+      border: 2px solid var(--accent-purple);
+      background: var(--bg-surface);
+    }
+
+    .col-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .col-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .col-milestones .col-title { color: #0284c7; }
+    .col-upcoming .col-title { color: #16a34a; }
+    .col-dump .col-title { color: #334155; }
+    .col-notes .col-title { color: #9333ea; }
+    [data-theme="dark"] .col-dump .col-title { color: #cbd5e1; }
+
+    .item-counter {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--bg-input);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .quick-add-form {
+      display: flex;
+      gap: 6px;
+    }
+
+    .quick-add-input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text-main);
+      font-size: 0.825rem;
+      outline: none;
+      font-family: var(--font-main);
+      transition: border-color 0.15s ease;
+    }
+    .quick-add-input:focus {
+      border-color: var(--primary);
+      background: var(--bg-surface);
+    }
+
+    /* List of Cards inside each column */
+    .col-items-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      flex: 1;
+      overflow-y: auto;
+      max-height: 480px;
+      padding-right: 2px;
+    }
+
+    .pill-card-item {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      padding: 0.85rem;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.6rem;
+      transition: all 0.15s ease;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .pill-card-item:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Outlines matching sketch */
+    .col-milestones .pill-card-item {
+      border: 1.5px solid #bae6fd;
+      background: #fafcfe;
+    }
+    .col-milestones .pill-card-item:hover {
+      border-color: #0284c7;
+      background: #ffffff;
+    }
+
+    .col-upcoming .pill-card-item {
+      border: 1.5px solid #bbf7d0;
+      background: #fafdfb;
+    }
+    .col-upcoming .pill-card-item:hover {
+      border-color: #16a34a;
+      background: #ffffff;
+    }
+
+    .col-dump .pill-card-item {
+      border: 1.5px solid #cbd5e1;
+      background: #f8fafc;
+    }
+    .col-dump .pill-card-item:hover {
+      border-color: #64748b;
+      background: #ffffff;
+    }
+
+    [data-theme="dark"] .col-milestones .pill-card-item { background: #0b1120; border-color: rgba(2, 132, 199, 0.45); }
+    [data-theme="dark"] .col-upcoming .pill-card-item { background: #0b1120; border-color: rgba(16, 185, 129, 0.45); }
+    [data-theme="dark"] .col-dump .pill-card-item { background: #0b1120; border-color: rgba(100, 116, 139, 0.45); }
+
+    .pill-item-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      flex: 1;
+    }
+
+    .pill-checkbox {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1.5px solid var(--border-subtle);
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+    .pill-checkbox.checked {
+      background: #16a34a;
+      border-color: #16a34a;
+      color: #ffffff;
+    }
+
+    .pill-content {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1;
+    }
+
+    .pill-text {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-main);
+      line-height: 1.35;
+    }
+    .pill-text.strikethrough {
+      text-decoration: line-through;
+      color: var(--text-dim);
+    }
+
+    .pill-meta {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+    }
+
+    .pill-delete-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 2px;
+      border-radius: 4px;
+      opacity: 0.4;
+      transition: opacity 0.15s ease, color 0.15s ease;
+    }
+    .pill-card-item:hover .pill-delete-btn {
+      opacity: 1;
+    }
+    .pill-delete-btn:hover {
+      color: #ef4444;
+    }
+
+    /* Column 4: Notes (Purple) */
+    .notes-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      gap: 0.75rem;
+    }
+
+    .notes-textarea {
+      width: 100%;
+      flex: 1;
+      min-height: 380px;
+      background: #fdfcfe;
+      border: 1.5px solid #e9d5ff;
+      border-radius: 12px;
+      padding: 1rem;
+      color: var(--text-main);
+      font-family: var(--font-main);
+      font-size: 0.875rem;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .notes-textarea:focus {
+      border-color: #9333ea;
+      box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.12);
+      background: #ffffff;
+    }
+    [data-theme="dark"] .notes-textarea {
+      background: #0b1120;
+      border-color: rgba(168, 85, 247, 0.35);
+    }
+
+    .notes-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .auto-save-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #16a34a;
+      font-weight: 700;
+    }
+
+    /* ========================================================= */
+    /* VIEW 2: ALL CLIENTS DIRECTORY OVERVIEW                    */
+    /* ========================================================= */
+    .overview-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1.35rem;
+    }
+
+    .overview-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--stat-accent, #2563eb);
+    }
+
+    .stat-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .stat-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .stat-sub {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+    }
+
+    /* Client Cards Grid */
+    .clients-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .client-overview-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.35rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      position: relative;
+      box-shadow: var(--shadow-sm);
+    }
+    .client-overview-card:hover {
+      transform: translateY(-2px);
+      border-color: #2563eb;
+      box-shadow: var(--shadow-md);
+    }
+
+    .client-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .client-avatar-info {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .client-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #1e293b;
+    }
+    [data-theme="dark"] .client-avatar {
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: #ffffff;
+    }
+
+    .client-name {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .client-sub {
+      font-size: 0.785rem;
+      color: var(--text-muted);
+    }
+
+    .mini-pipeline {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .mini-stage-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mini-stepper {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .mini-step {
+      flex: 1;
+      height: 5px;
+      background: var(--border);
+      border-radius: 3px;
+    }
+    .mini-step.completed {
+      background: #2563eb;
+    }
+    .mini-step.blocked {
+      background: #ef4444;
+    }
+
+    .blocker-alert-strip {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.775rem;
+      color: #b91c1c;
+    }
+
+    .card-footer-metrics {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      padding-top: 0.75rem;
+    }
+
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 520px;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: var(--shadow-lg);
+      transform: translateY(10px);
+      transition: transform 0.2s ease;
+    }
+    .modal-overlay.active .modal-card {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+    .modal-close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .form-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-body);
+    }
+    .form-input, .form-select, .form-textarea {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      color: var(--text-main);
+      font-size: 0.85rem;
+      outline: none;
+      font-family: var(--font-main);
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--primary);
+      background: var(--bg-surface);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+      cursor: pointer;
+    }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    /* Notification toast */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #0f172a;
+      color: #ffffff;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .empty-placeholder {
+      padding: 2rem 1rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      border: 1px dashed var(--border-subtle);
+      border-radius: 10px;
+      margin: auto 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header>
+    <div class="brand-group">
+      <div class="logo-badge">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">
+          OpsPulse
+          <span class="brand-badge">Live Operations</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center View Switcher & Client Selector -->
+    <div class="nav-actions">
+      <div class="view-toggle">
+        <button class="view-btn active" id="btnViewDetail" onclick="switchView('detail')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          Client Journey Card
+        </button>
+        <button class="view-btn" id="btnViewOverview" onclick="switchView('overview')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          All Clients (<span id="allClientsCount">3</span>)
+        </button>
+      </div>
+
+      <!-- Quick Switch Client Dropdown -->
+      <select class="client-select" id="clientSelect" onchange="onSelectClientChange(this.value)">
+        <!-- Options populated dynamically -->
+      </select>
+
+      <button class="btn btn-primary" onclick="openAddClientModal()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Client
+      </button>
+
+      <!-- Light / Dark Theme Toggle Button -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle Theme (Light / Dark)">
+        <svg id="themeIconSun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+
+      <button class="btn btn-secondary btn-sm" onclick="exportData()" title="Backup JSON">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
+
+      <button class="btn btn-secondary btn-sm" onclick="resetDemoData()" title="Reset to sample data">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        Demo Data
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Body Content -->
+  <main>
+    <!-- Live Operational Alert Bar -->
+    <div class="live-alert-bar" id="liveAlertBar">
+      <div class="live-alert-left">
+        <div class="pulse-dot"></div>
+        <div>
+          <strong id="liveAlertTitle" style="color: #0f172a;">Operations Live Preview:</strong>
+          <span id="liveAlertMessage" style="color: #334155;">Monitoring 3 active clients across Onboarding, AI Agents deployment, and ADs launch stages.</span>
+        </div>
+      </div>
+      <div style="font-size:0.75rem; color: var(--text-muted); font-weight:600;">
+        Team Synchronized • Auto-saving to LocalStorage
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 1: DETAILED CLIENT JOURNEY DASHBOARD (USER SKETCH)   -->
+    <!-- ======================================================== -->
+    <div id="clientDetailContainer" class="client-detail-view">
+      <!-- Client Details Header Bar -->
+      <div class="client-detail-header">
+        <div class="header-left">
+          <div class="client-badge-large" id="currentClientAvatar">AR</div>
+          <div class="header-info-col">
+            <h1 id="currentClientName">
+              Apex Retail AI
+              <span class="status-badge status-active" id="currentClientStatusBadge">Active</span>
+            </h1>
+            <div class="header-meta">
+              <span><strong>Account Lead:</strong> <span id="currentClientOwner">Sarah Jenkins</span></span>
+              <span>•</span>
+              <span><strong>Contract:</strong> <span id="currentClientTier">Enterprise / $4,500/mo</span></span>
+              <span>•</span>
+              <span><strong>Slack:</strong> <span id="currentClientSlack">#client-apex-retail</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button class="btn btn-secondary" onclick="openAddTimelineModal(true)" style="border-color: #fca5a5; color: #dc2626; background: #fff5f5;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            + Add Blocker
+          </button>
+          <button class="btn btn-primary" onclick="openAddTimelineModal(false)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            + Timeline Event
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="editCurrentClientInfo()" title="Edit Client Info">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCurrentClient()" title="Delete Client">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Active Blocker Banner (if any blockers exist for current client) -->
+      <div id="activeBlockerBanner" class="client-active-blockers" style="display: none;">
+        <div class="blocker-info-left" style="display: flex; align-items: center; gap: 0.75rem;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.4"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div>
+            <div class="blocker-title" id="blockerBannerTitle">Active Blocker Detected on Timeline</div>
+            <div class="blocker-desc" id="blockerBannerDesc">Shopify product feed API rate-limit exceeded. Need client IT admin approval.</div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-secondary" onclick="resolveTopBlocker()" style="background: #ffffff; border-color: #fca5a5; color: #dc2626; font-weight:700;">
+          Mark Resolved ✓
+        </button>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- HORIZONTAL TIMELINE SECTION (MATCHING THE DRAWING)        -->
+      <!-- ======================================================== -->
+      <div class="timeline-section-card">
+        <div class="timeline-header">
+          <div class="timeline-title-area">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <h2>Client Journey Timeline</h2>
+            <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">(Onboarding → AI Agent → Ads → Payment & Milestones)</span>
+          </div>
+
+          <div class="timeline-toolbar">
+            <button class="btn btn-secondary btn-sm" onclick="openAddTimelineModal(false)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Stage / Tick
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="openAddTimelineModal(true)" style="color:#dc2626; border-color:#fca5a5;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Add Blocker on Timeline
+            </button>
+          </div>
+        </div>
+
+        <!-- The Horizontal interactive track with markers & ticks -->
+        <div class="timeline-container">
+          <div class="timeline-track-wrapper">
+            <!-- Continuous line drawn by user in sketch -->
+            <div class="timeline-horizontal-axis">
+              <div class="timeline-progress-fill" id="timelineProgressBar"></div>
+            </div>
+
+            <!-- Nodes distributed horizontally -->
+            <div class="timeline-nodes" id="timelineNodesList">
+              <!-- Dynamically rendered timeline events with red ticks, blue ticks, blocker ticks -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- 4-COLUMN CARDS SECTION (MATCHING USER'S EXACT 4 BOXES)   -->
+      <!-- 1. Milestones (Blue)                                     -->
+      <!-- 2. Upcoming (Green)                                      -->
+      <!-- 3. Dump (Black/Dark)                                     -->
+      <!-- 4. Notes (Purple)                                        -->
+      <!-- ======================================================== -->
+      <div class="quad-columns-grid">
+        
+        <!-- 1. MILESTONES COLUMN (BLUE OUTLINE) -->
+        <div class="quad-column col-milestones">
+          <div class="col-header">
+            <div class="col-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              Milestones :
+            </div>
+            <span class="item-counter" id="milestonesCount">0</span>
+          </div>
+
+          <!-- Quick Add Input -->
+          <form class="quick-add-form" onsubmit="event.preventDefault(); addColumnItem('milestones');">
+            <input type="text" id="inputMilestone" class="quick-add-input" placeholder="+ Add milestone & press Enter..." required>
+            <button type="submit" class="btn btn-secondary btn-sm" style="color:#0284c7; border-color:#bae6fd;">Add</button>
+          </form>
+
+          <!-- List of rounded cards -->
+          <div class="col-items-list" id="milestonesList">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <!-- 2. UPCOMING COLUMN (GREEN OUTLINE) -->
+        <div class="quad-column col-upcoming">
+          <div class="col-header">
+            <div class="col-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+              Upcoming
+            </div>
+            <span class="item-counter" id="upcomingCount">0</span>
+          </div>
+
+          <!-- Quick Add Input -->
+          <form class="quick-add-form" onsubmit="event.preventDefault(); addColumnItem('upcoming');">
+            <input type="text" id="inputUpcoming" class="quick-add-input" placeholder="+ Add upcoming deliverable..." required>
+            <button type="submit" class="btn btn-secondary btn-sm" style="color:#16a34a; border-color:#bbf7d0;">Add</button>
+          </form>
+
+          <!-- List of rounded cards -->
+          <div class="col-items-list" id="upcomingList">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <!-- 3. DUMP COLUMN (BLACK/DARK SLATE OUTLINE) -->
+        <div class="quad-column col-dump">
+          <div class="col-header">
+            <div class="col-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              Dump
+            </div>
+            <span class="item-counter" id="dumpCount">0</span>
+          </div>
+
+          <!-- Quick Add Input -->
+          <form class="quick-add-form" onsubmit="event.preventDefault(); addColumnItem('dump');">
+            <input type="text" id="inputDump" class="quick-add-input" placeholder="+ Dump thoughts, logs, ideas..." required>
+            <button type="submit" class="btn btn-secondary btn-sm" style="color:#475569; border-color:#cbd5e1;">Add</button>
+          </form>
+
+          <!-- List of rounded cards -->
+          <div class="col-items-list" id="dumpList">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <!-- 4. NOTES COLUMN (PURPLE OUTLINE - LARGE BOX) -->
+        <div class="quad-column col-notes">
+          <div class="col-header">
+            <div class="col-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              Notes
+            </div>
+            <div class="auto-save-pill" id="noteAutoSaveStatus">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+              Auto-saved
+            </div>
+          </div>
+
+          <div class="notes-container">
+            <textarea 
+              id="clientNotesTextarea" 
+              class="notes-textarea" 
+              placeholder="Operational notes, POC details, credentials, call summaries, escalations, context..."
+              oninput="handleNotesInput(this.value)"
+            ></textarea>
+            <div class="notes-footer">
+              <span>Supports multi-line scratchpad notes</span>
+              <span id="notesCharCount">0 characters</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 2: ALL CLIENTS DIRECTORY OVERVIEW                    -->
+    <!-- ======================================================== -->
+    <div id="allClientsOverviewContainer" class="overview-section" style="display: none;">
+      <!-- Operations Metric Summary -->
+      <div class="overview-stats">
+        <div class="stat-card" style="--stat-accent: #2563eb;">
+          <div class="stat-title">Active Clients</div>
+          <div class="stat-value" id="statTotalClients">3</div>
+          <div class="stat-sub">Managed under operations</div>
+        </div>
+        <div class="stat-card" style="--stat-accent: #16a34a;">
+          <div class="stat-title">AI Agents Live</div>
+          <div class="stat-value" id="statDeployedAgents">2</div>
+          <div class="stat-sub">In production answering users</div>
+        </div>
+        <div class="stat-card" style="--stat-accent: #ef4444;">
+          <div class="stat-title">Active Blockers</div>
+          <div class="stat-value" id="statActiveBlockers" style="color: #dc2626;">1</div>
+          <div class="stat-sub">Requires operations intervention</div>
+        </div>
+        <div class="stat-card" style="--stat-accent: #9333ea;">
+          <div class="stat-title">Upcoming Tasks</div>
+          <div class="stat-value" id="statUpcomingTasks">8</div>
+          <div class="stat-sub">Across all client pipelines</div>
+        </div>
+      </div>
+
+      <!-- Clients Directory Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main);">Client Operations Cards</h2>
+          <p style="font-size: 0.825rem; color: var(--text-muted);">Click any card to open their complete journey timeline, milestones, dumps, and notes.</p>
+        </div>
+        <div style="display:flex; gap: 0.5rem;">
+          <input type="text" id="clientSearchInput" class="quick-add-input" placeholder="Search clients..." oninput="renderClientsGrid(this.value)" style="width: 220px;">
+          <button class="btn btn-primary" onclick="openAddClientModal()">+ Add Client</button>
+        </div>
+      </div>
+
+      <!-- Cards Grid -->
+      <div class="clients-grid" id="clientsGrid">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: ADD / EDIT TIMELINE EVENT OR BLOCKER             -->
+  <!-- ======================================================== -->
+  <div class="modal-overlay" id="timelineModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="timelineModalTitle">Add Timeline Journey Event</div>
+        <button class="modal-close-btn" onclick="closeTimelineModal()">&times;</button>
+      </div>
+
+      <form onsubmit="handleTimelineSubmit(event)">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label">Event / Stage Title *</label>
+          <input type="text" id="timelineEventTitle" class="form-input" placeholder="e.g. Onboarding Done, AI Agent Deployed, ADs Started, Payment Due" required>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 0.85rem;">
+          <div class="form-group">
+            <label class="form-label">Date / Month *</label>
+            <input type="text" id="timelineEventDate" class="form-input" placeholder="e.g. Oct 12 or Nov 01" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Event Type / Tick Style</label>
+            <select id="timelineEventType" class="form-select" onchange="onTimelineTypeChange(this.value)">
+              <option value="journey">Journey Stage (Red Tick)</option>
+              <option value="payment">Payment / Commercial (Blue Tick)</option>
+              <option value="milestone">Milestone Achieved (Green Tick)</option>
+              <option value="blocker">⚠️ Operational Blocker (Flashing Red)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group" id="blockerDetailsGroup" style="display: none; margin-bottom: 0.85rem;">
+          <label class="form-label" style="color: #dc2626;">Blocker Details & Owner</label>
+          <textarea id="timelineBlockerDesc" class="form-textarea" rows="2" placeholder="Describe what is blocked and who needs to unblock it (e.g. Meta ad account access token expired)..."></textarea>
+        </div>
+
+        <div class="checkbox-row" style="margin-bottom: 0.85rem;">
+          <input type="checkbox" id="timelineIsCompleted" checked>
+          <label for="timelineIsCompleted" class="form-label" style="margin-bottom:0; cursor:pointer;">Mark as Completed / Passed Stage</label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeTimelineModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="timelineModalSubmitBtn">Add to Timeline</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: ADD / EDIT CLIENT                                -->
+  <!-- ======================================================== -->
+  <div class="modal-overlay" id="clientModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="clientModalTitle">Add New Client</div>
+        <button class="modal-close-btn" onclick="closeClientModal()">&times;</button>
+      </div>
+
+      <form onsubmit="handleClientSubmit(event)">
+        <div class="form-group" style="margin-bottom: 0.85rem;">
+          <label class="form-label">Client Name *</label>
+          <input type="text" id="newClientName" class="form-input" placeholder="e.g. HyperScale Retail" required>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 0.85rem;">
+          <div class="form-group">
+            <label class="form-label">Industry / Subtitle</label>
+            <input type="text" id="newClientIndustry" class="form-input" placeholder="e.g. E-Commerce / D2C">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Account Owner / Lead</label>
+            <input type="text" id="newClientOwner" class="form-input" placeholder="e.g. Alex Rivera">
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 0.85rem;">
+          <div class="form-group">
+            <label class="form-label">Contract / Tier</label>
+            <input type="text" id="newClientTier" class="form-input" placeholder="e.g. $3,500/mo Retainer">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Slack Channel</label>
+            <input type="text" id="newClientSlack" class="form-input" placeholder="e.g. #client-hyperscale">
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeClientModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Client</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div class="toast" id="toastMessage">Changes saved</div>
+
+  <!-- ======================================================== -->
+  <!-- APPLICATION JAVASCRIPT LOGIC                            -->
+  <!-- ======================================================== -->
+  <script>
+    const STORAGE_KEY = 'opspulse_clients_dashboard_v2';
+    const THEME_KEY = 'opspulse_theme_pref';
+
+    const SAMPLE_CLIENTS = [
+      {
+        id: 'client_1',
+        name: 'Apex Retail AI',
+        industry: 'Omnichannel D2C Fashion',
+        owner: 'Sarah Jenkins',
+        tier: 'Growth Tier / $4,500/mo',
+        slack: '#client-apex-retail',
+        status: 'blocked',
+        timeline: [
+          { id: 't1', title: 'Onboarding Done', date: 'Oct 04', month: 'Oct', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't2', title: 'AI Agent Deployed', date: 'Oct 18', month: 'Oct', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't3', title: 'ADs Started', date: 'Oct 22', month: 'Oct', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't4', title: 'Catalog API Sync Blocker', date: 'Oct 24', month: 'Oct', type: 'blocker', completed: false, tickColor: 'blocker', desc: 'Shopify product feed API rate-limit exceeded. Need client IT admin approval for dedicated token.' },
+          { id: 't5', title: 'Payment Due', date: 'Nov 01', month: 'Nov', type: 'payment', completed: false, tickColor: 'blue' },
+          { id: 't6', title: 'Scale Phase 2', date: 'Nov 15', month: 'Nov', type: 'milestone', completed: false, tickColor: 'green' }
+        ],
+        milestones: [
+          { id: 'm1', text: 'Kickoff call & SLA signed', date: 'Oct 02', done: true },
+          { id: 'm2', text: 'Catalog data ingestion & cleaning', date: 'Oct 10', done: true },
+          { id: 'm3', text: 'Customer service AI bot prompts approved', date: 'Oct 16', done: true },
+          { id: 'm4', text: 'Meta & Google Ads tracking pixel setup', date: 'Oct 20', done: true },
+          { id: 'm5', text: 'First 1,000 automated AI chat conversations', date: 'Nov 05', done: false }
+        ],
+        upcoming: [
+          { id: 'u1', text: 'Resolve Shopify API token with client IT', date: 'Oct 25', priority: 'High' },
+          { id: 'u2', text: 'Weekly Operations Sync Call (Thu 3 PM)', date: 'Oct 27', priority: 'Med' },
+          { id: 'u3', text: 'Launch Retargeting Lookalike Ads', date: 'Nov 02', priority: 'High' },
+          { id: 'u4', text: 'Deliver Monthly ROI & Conversion Report', date: 'Nov 07', priority: 'Med' }
+        ],
+        dump: [
+          { id: 'd1', text: 'Client requested French language support for Canada traffic' },
+          { id: 'd2', text: 'Check if they want to integrate WhatsApp Business API next month' },
+          { id: 'd3', text: 'CEO loved the initial conversion lift (14% increase on checkout)' },
+          { id: 'd4', text: 'Send updated invoice link to accounting team' }
+        ],
+        notes: `Account Background:
+• Primary POC: David Sterling (VP of Growth - david@apexretail.io)
+• Secondary Tech POC: Elena Rostova (Lead Dev)
+• Key Objective: Scale sales to 500 orders/day with automated agent answering size/shipping FAQs.
+
+Operations Protocol:
+1. All ad creatives must be previewed 24 hrs prior to going live.
+2. Escalation channel: Slack #apex-ops-alerts
+3. Bi-weekly report delivery every other Tuesday.`
+      },
+      {
+        id: 'client_2',
+        name: 'Starlight Healthcare AI',
+        industry: 'Telehealth & Clinic Booking',
+        owner: 'Marcus Brody',
+        tier: 'Enterprise / $6,800/mo',
+        slack: '#client-starlight-health',
+        status: 'onboarding',
+        timeline: [
+          { id: 't201', title: 'Onboarding Done', date: 'Oct 12', month: 'Oct', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't202', title: 'AI Agent Deployed', date: 'Oct 26', month: 'Oct', type: 'journey', completed: false, tickColor: 'red' },
+          { id: 't203', title: 'HIPAA Compliance Signoff', date: 'Oct 30', month: 'Oct', type: 'milestone', completed: false, tickColor: 'green' },
+          { id: 't204', title: 'ADs Started', date: 'Nov 05', month: 'Nov', type: 'journey', completed: false, tickColor: 'red' },
+          { id: 't205', title: 'Payment Due', date: 'Nov 12', month: 'Nov', type: 'payment', completed: false, tickColor: 'blue' }
+        ],
+        milestones: [
+          { id: 'm201', text: 'Security review & BAA contract signed', date: 'Oct 08', done: true },
+          { id: 'm202', text: 'EMR API sandbox testing complete', date: 'Oct 18', done: true },
+          { id: 'm203', text: 'Doctor scheduling bot staging deployment', date: 'Oct 26', done: false }
+        ],
+        upcoming: [
+          { id: 'u201', text: 'HIPAA Audit checklist review with legal', date: 'Oct 28', priority: 'High' },
+          { id: 'u202', text: 'Staff training webinar on live handover', date: 'Nov 03', priority: 'Med' }
+        ],
+        dump: [
+          { id: 'd201', text: 'Dr. Ross wants automated SMS reminders 2 hours before patient calls' },
+          { id: 'd202', text: 'Need custom voice agent demo prepared for next board meeting' }
+        ],
+        notes: `Clinical Operations Notes:
+• Strict HIPAA compliance rules apply to all agent transcripts.
+• Patient records must be encrypted before ingestion.
+• Client contact: Dr. Rebecca Ross (Founder).`
+      },
+      {
+        id: 'client_3',
+        name: 'Nexus Cloud FinTech',
+        industry: 'B2B SaaS / Payment Automation',
+        owner: 'Priya Sharma',
+        tier: 'Standard / $3,200/mo',
+        slack: '#client-nexus-fintech',
+        status: 'active',
+        timeline: [
+          { id: 't301', title: 'Onboarding Done', date: 'Sep 15', month: 'Sep', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't302', title: 'AI Agent Deployed', date: 'Oct 01', month: 'Oct', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't303', title: 'ADs Started', date: 'Oct 05', month: 'Oct', type: 'journey', completed: true, tickColor: 'red' },
+          { id: 't304', title: 'Payment Due', date: 'Nov 01', month: 'Nov', type: 'payment', completed: false, tickColor: 'blue' },
+          { id: 't305', title: 'Q4 Strategy Expansion', date: 'Nov 20', month: 'Nov', type: 'milestone', completed: false, tickColor: 'green' }
+        ],
+        milestones: [
+          { id: 'm301', text: 'Payment gateway webhooks enabled', date: 'Sep 22', done: true },
+          { id: 'm302', text: 'Customer invoice resolution bot live', date: 'Oct 01', done: true },
+          { id: 'm303', text: 'LinkedIn Ads targeted campaign active', date: 'Oct 08', done: true }
+        ],
+        upcoming: [
+          { id: 'u301', text: 'Evaluate CAC per SQL lead in HubSpot', date: 'Oct 30', priority: 'Med' },
+          { id: 'u302', text: 'Upsell proposal for Multi-currency engine', date: 'Nov 10', priority: 'High' }
+        ],
+        dump: [
+          { id: 'd301', text: 'HubSpot integration works smoothly, 98% lead attribution accuracy' },
+          { id: 'd302', text: 'Discuss adding Stripe billing integration next quarter' }
+        ],
+        notes: `Enterprise Growth Context:
+• Target customer: CFOs and Operations Directors at mid-market companies.
+• Lead magnet: Instant AI-powered SaaS Spend Calculator.
+• High satisfaction score: 9.4/10.`
+      }
+    ];
+
+    let clients = [];
+    let currentClientId = null;
+    let currentView = 'detail';
+    let editingClientId = null;
+
+    // Theme Management
+    function initTheme() {
+      const savedTheme = localStorage.getItem(THEME_KEY) || 'light';
+      setTheme(savedTheme);
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      setTheme(next);
+      localStorage.setItem(THEME_KEY, next);
+      showToast(`Switched to ${next} mode`);
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('themeToggleBtn');
+      if (theme === 'dark') {
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
+      } else {
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+      }
+    }
+
+    // Load / Save Data
+    function loadData() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          clients = JSON.parse(stored);
+        } else {
+          clients = JSON.parse(JSON.stringify(SAMPLE_CLIENTS));
+          saveData();
+        }
+      } catch (e) {
+        console.error("Could not load from localStorage:", e);
+        clients = JSON.parse(JSON.stringify(SAMPLE_CLIENTS));
+      }
+
+      if (!currentClientId && clients.length > 0) {
+        currentClientId = clients[0].id;
+      }
+    }
+
+    function saveData() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
+      } catch (e) {
+        console.error("Failed to save to localStorage:", e);
+      }
+      updateGlobalCounters();
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastMessage');
+      toast.innerText = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2200);
+    }
+
+    function getCurrentClient() {
+      return clients.find(c => c.id === currentClientId) || clients[0];
+    }
+
+    function switchView(viewName) {
+      currentView = viewName;
+      const detailContainer = document.getElementById('clientDetailContainer');
+      const overviewContainer = document.getElementById('allClientsOverviewContainer');
+      const btnDetail = document.getElementById('btnViewDetail');
+      const btnOverview = document.getElementById('btnViewOverview');
+
+      if (viewName === 'detail') {
+        detailContainer.style.display = 'flex';
+        overviewContainer.style.display = 'none';
+        btnDetail.classList.add('active');
+        btnOverview.classList.remove('active');
+        renderClientDetail();
+      } else {
+        detailContainer.style.display = 'none';
+        overviewContainer.style.display = 'flex';
+        btnDetail.classList.remove('active');
+        btnOverview.classList.add('active');
+        renderClientsGrid();
+      }
+    }
+
+    function renderClientSelectDropdown() {
+      const select = document.getElementById('clientSelect');
+      select.innerHTML = '';
+      clients.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = (c.status === 'blocked' ? '⚠️ ' : '') + c.name;
+        if (c.id === currentClientId) opt.selected = true;
+        select.appendChild(opt);
+      });
+      document.getElementById('allClientsCount').textContent = clients.length;
+    }
+
+    function onSelectClientChange(newId) {
+      currentClientId = newId;
+      if (currentView === 'overview') {
+        switchView('detail');
+      } else {
+        renderClientDetail();
+      }
+    }
+
+    function updateGlobalCounters() {
+      const total = clients.length;
+      document.getElementById('statTotalClients').textContent = total;
+      
+      let blockedCount = 0;
+      let aiDeployedCount = 0;
+      let upcomingTasksCount = 0;
+
+      clients.forEach(c => {
+        const hasBlocker = (c.timeline || []).some(t => t.type === 'blocker' && !t.completed);
+        if (hasBlocker || c.status === 'blocked') blockedCount++;
+
+        const agentDeployed = (c.timeline || []).some(t => t.title.toLowerCase().includes('agent') && t.completed);
+        if (agentDeployed) aiDeployedCount++;
+
+        upcomingTasksCount += (c.upcoming || []).length;
+      });
+
+      document.getElementById('statActiveBlockers').textContent = blockedCount;
+      document.getElementById('statDeployedAgents').textContent = aiDeployedCount;
+      document.getElementById('statUpcomingTasks').textContent = upcomingTasksCount;
+      document.getElementById('allClientsCount').textContent = total;
+
+      const liveAlert = document.getElementById('liveAlertMessage');
+      if (blockedCount > 0) {
+        liveAlert.innerHTML = `<span style="color:#dc2626; font-weight:700;">${blockedCount} client has an active blocker on their timeline!</span> Quick resolution needed.`;
+      } else {
+        liveAlert.innerHTML = `All ${total} clients are on schedule. Next upcoming milestones are progressing smoothly.`;
+      }
+    }
+
+    // =========================================================
+    // RENDER CLIENT DETAIL
+    // =========================================================
+    function renderClientDetail() {
+      const client = getCurrentClient();
+      if (!client) return;
+
+      renderClientSelectDropdown();
+
+      const activeBlocker = (client.timeline || []).find(t => t.type === 'blocker' && !t.completed);
+      const blockerBanner = document.getElementById('activeBlockerBanner');
+      if (activeBlocker) {
+        blockerBanner.style.display = 'flex';
+        document.getElementById('blockerBannerTitle').textContent = `⚠️ Active Blocker on Timeline: ${activeBlocker.title}`;
+        document.getElementById('blockerBannerDesc').textContent = activeBlocker.desc || `Identified on ${activeBlocker.date}. Team action required.`;
+      } else {
+        blockerBanner.style.display = 'none';
+      }
+
+      document.getElementById('currentClientAvatar').textContent = client.name.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+      document.getElementById('currentClientName').innerHTML = `
+        ${client.name}
+        <span class="status-badge ${activeBlocker ? 'status-blocked' : (client.status === 'onboarding' ? 'status-onboarding' : 'status-active')}">
+          ${activeBlocker ? 'BLOCKED' : client.status.toUpperCase()}
+        </span>
+      `;
+      document.getElementById('currentClientOwner').textContent = client.owner || 'Operations Lead';
+      document.getElementById('currentClientTier').textContent = client.tier || 'Standard';
+      document.getElementById('currentClientSlack').textContent = client.slack || '#general';
+
+      renderTimeline(client);
+      renderMilestonesColumn(client);
+      renderUpcomingColumn(client);
+      renderDumpColumn(client);
+      renderNotesColumn(client);
+    }
+
+    // Render Timeline Track
+    function renderTimeline(client) {
+      const container = document.getElementById('timelineNodesList');
+      container.innerHTML = '';
+
+      const timelineEvents = client.timeline || [];
+      if (timelineEvents.length === 0) {
+        container.innerHTML = `<div class="empty-placeholder" style="width:100%;">No timeline events added yet. Click "+ Add Stage / Tick" to start!</div>`;
+        return;
+      }
+
+      const completedCount = timelineEvents.filter(t => t.completed).length;
+      const progressPercent = Math.min(100, Math.round((completedCount / (timelineEvents.length || 1)) * 100));
+      document.getElementById('timelineProgressBar').style.width = `${progressPercent}%`;
+
+      timelineEvents.forEach((ev) => {
+        const node = document.createElement('div');
+        node.className = `timeline-node ${ev.type === 'blocker' ? 'status-blocker' : (ev.type === 'payment' ? 'status-payment' : (ev.completed ? 'status-done' : ''))}`;
+
+        let tickClass = 'tick-red';
+        let tagClass = 'tag-red';
+        if (ev.type === 'payment') {
+          tickClass = 'tick-blue';
+          tagClass = 'tag-blue';
+        } else if (ev.type === 'blocker') {
+          tickClass = 'tick-blocker';
+          tagClass = 'tag-blocker';
+        } else if (ev.type === 'milestone') {
+          tickClass = 'tick-green';
+          tagClass = 'tag-green';
+        }
+
+        node.innerHTML = `
+          <div class="timeline-month-badge">${ev.month || ev.date.split(' ')[0] || 'Stage'}</div>
+          <div class="timeline-tick ${tickClass}"></div>
+          <div class="timeline-pin" title="Click to toggle status" onclick="toggleTimelineEventStatus('${ev.id}')"></div>
+          <div class="timeline-node-card">
+            <button class="node-delete-btn" onclick="event.stopPropagation(); deleteTimelineEvent('${ev.id}')" title="Delete">✕</button>
+            <div class="timeline-node-title">${ev.title}</div>
+            <div class="timeline-node-date">${ev.date} • ${ev.completed ? '✓ Done' : (ev.type === 'blocker' ? '⚠️ Active' : 'Pending')}</div>
+            <span class="timeline-node-tag ${tagClass}">
+              ${ev.type === 'blocker' ? 'BLOCKER' : (ev.type === 'payment' ? 'PAYMENT' : (ev.completed ? 'COMPLETED' : 'UPCOMING'))}
+            </span>
+            ${ev.desc ? `<div style="font-size:0.68rem; color:#dc2626; margin-top:3px; font-weight:600;">${ev.desc}</div>` : ''}
+          </div>
+        `;
+        container.appendChild(node);
+      });
+    }
+
+    function toggleTimelineEventStatus(eventId) {
+      const client = getCurrentClient();
+      const ev = client.timeline.find(t => t.id === eventId);
+      if (ev) {
+        ev.completed = !ev.completed;
+        saveData();
+        renderClientDetail();
+        showToast(`Updated "${ev.title}" to ${ev.completed ? 'Completed' : 'Pending'}`);
+      }
+    }
+
+    function deleteTimelineEvent(eventId) {
+      const client = getCurrentClient();
+      client.timeline = client.timeline.filter(t => t.id !== eventId);
+      saveData();
+      renderClientDetail();
+      showToast('Timeline event removed');
+    }
+
+    function resolveTopBlocker() {
+      const client = getCurrentClient();
+      const blocker = (client.timeline || []).find(t => t.type === 'blocker' && !t.completed);
+      if (blocker) {
+        blocker.completed = true;
+        client.status = 'active';
+        saveData();
+        renderClientDetail();
+        showToast('Blocker marked as resolved! ✓');
+      }
+    }
+
+    // =========================================================
+    // 4 COLUMNS IMPLEMENTATION
+    // =========================================================
+
+    // 1. MILESTONES (BLUE)
+    function renderMilestonesColumn(client) {
+      const list = document.getElementById('milestonesList');
+      list.innerHTML = '';
+      const items = client.milestones || [];
+      document.getElementById('milestonesCount').textContent = items.length;
+
+      if (items.length === 0) {
+        list.innerHTML = `<div class="empty-placeholder">No milestones added yet.<br>Type above and press Enter.</div>`;
+        return;
+      }
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'pill-card-item';
+        card.innerHTML = `
+          <div class="pill-item-left">
+            <div class="pill-checkbox ${item.done ? 'checked' : ''}" onclick="toggleMilestoneItem('${item.id}')">
+              ${item.done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+            </div>
+            <div class="pill-content">
+              <div class="pill-text ${item.done ? 'strikethrough' : ''}">${item.text}</div>
+              <div class="pill-meta" style="color: #0284c7;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                ${item.date || 'Target date set'}
+              </div>
+            </div>
+          </div>
+          <button class="pill-delete-btn" onclick="deleteMilestoneItem('${item.id}')" title="Delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    function toggleMilestoneItem(id) {
+      const client = getCurrentClient();
+      const item = client.milestones.find(m => m.id === id);
+      if (item) {
+        item.done = !item.done;
+        saveData();
+        renderMilestonesColumn(client);
+      }
+    }
+
+    function deleteMilestoneItem(id) {
+      const client = getCurrentClient();
+      client.milestones = client.milestones.filter(m => m.id !== id);
+      saveData();
+      renderMilestonesColumn(client);
+    }
+
+    // 2. UPCOMING (GREEN)
+    function renderUpcomingColumn(client) {
+      const list = document.getElementById('upcomingList');
+      list.innerHTML = '';
+      const items = client.upcoming || [];
+      document.getElementById('upcomingCount').textContent = items.length;
+
+      if (items.length === 0) {
+        list.innerHTML = `<div class="empty-placeholder">No upcoming tasks listed.<br>Add deliverables above.</div>`;
+        return;
+      }
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'pill-card-item';
+        card.innerHTML = `
+          <div class="pill-item-left">
+            <div class="pill-content">
+              <div class="pill-text">${item.text}</div>
+              <div class="pill-meta" style="color: #16a34a;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+                ${item.date || 'Upcoming'} ${item.priority ? `• Priority: ${item.priority}` : ''}
+              </div>
+            </div>
+          </div>
+          <button class="pill-delete-btn" onclick="deleteUpcomingItem('${item.id}')" title="Delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    function deleteUpcomingItem(id) {
+      const client = getCurrentClient();
+      client.upcoming = client.upcoming.filter(u => u.id !== id);
+      saveData();
+      renderUpcomingColumn(client);
+    }
+
+    // 3. DUMP (BLACK/SLATE)
+    function renderDumpColumn(client) {
+      const list = document.getElementById('dumpList');
+      list.innerHTML = '';
+      const items = client.dump || [];
+      document.getElementById('dumpCount').textContent = items.length;
+
+      if (items.length === 0) {
+        list.innerHTML = `<div class="empty-placeholder">Dump thoughts, requests & logs.<br>Freeform scratch items.</div>`;
+        return;
+      }
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'pill-card-item';
+        card.innerHTML = `
+          <div class="pill-item-left">
+            <div class="pill-content">
+              <div class="pill-text" style="font-weight: 500; font-size: 0.85rem; color:var(--text-body);">${item.text}</div>
+            </div>
+          </div>
+          <button class="pill-delete-btn" onclick="deleteDumpItem('${item.id}')" title="Delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    function deleteDumpItem(id) {
+      const client = getCurrentClient();
+      client.dump = client.dump.filter(d => d.id !== id);
+      saveData();
+      renderDumpColumn(client);
+    }
+
+    function addColumnItem(type) {
+      const client = getCurrentClient();
+      const todayStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      if (type === 'milestones') {
+        const input = document.getElementById('inputMilestone');
+        const val = input.value.trim();
+        if (!val) return;
+        client.milestones = client.milestones || [];
+        client.milestones.push({
+          id: 'm_' + Date.now(),
+          text: val,
+          date: todayStr,
+          done: false
+        });
+        input.value = '';
+        saveData();
+        renderMilestonesColumn(client);
+        showToast('Milestone added ✓');
+      } else if (type === 'upcoming') {
+        const input = document.getElementById('inputUpcoming');
+        const val = input.value.trim();
+        if (!val) return;
+        client.upcoming = client.upcoming || [];
+        client.upcoming.push({
+          id: 'u_' + Date.now(),
+          text: val,
+          date: todayStr,
+          priority: 'Med'
+        });
+        input.value = '';
+        saveData();
+        renderUpcomingColumn(client);
+        showToast('Upcoming task added ✓');
+      } else if (type === 'dump') {
+        const input = document.getElementById('inputDump');
+        const val = input.value.trim();
+        if (!val) return;
+        client.dump = client.dump || [];
+        client.dump.push({
+          id: 'd_' + Date.now(),
+          text: val
+        });
+        input.value = '';
+        saveData();
+        renderDumpColumn(client);
+        showToast('Thought dumped ✓');
+      }
+    }
+
+    // 4. NOTES (PURPLE)
+    let notesSaveTimeout = null;
+    function renderNotesColumn(client) {
+      const textarea = document.getElementById('clientNotesTextarea');
+      textarea.value = client.notes || '';
+      document.getElementById('notesCharCount').textContent = `${(client.notes || '').length} characters`;
+      document.getElementById('noteAutoSaveStatus').innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        Auto-saved
+      `;
+    }
+
+    function handleNotesInput(text) {
+      const client = getCurrentClient();
+      client.notes = text;
+      document.getElementById('notesCharCount').textContent = `${text.length} characters`;
+      
+      const statusPill = document.getElementById('noteAutoSaveStatus');
+      statusPill.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="3"><circle cx="12" cy="12" r="10"/></svg>
+        Saving...
+      `;
+
+      clearTimeout(notesSaveTimeout);
+      notesSaveTimeout = setTimeout(() => {
+        saveData();
+        statusPill.innerHTML = `
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          Auto-saved
+        `;
+      }, 500);
+    }
+
+    // =========================================================
+    // VIEW 2: ALL CLIENTS DIRECTORY GRID
+    // =========================================================
+    function renderClientsGrid(searchQuery = '') {
+      const grid = document.getElementById('clientsGrid');
+      grid.innerHTML = '';
+
+      const query = searchQuery.toLowerCase().trim();
+      const filtered = clients.filter(c => {
+        return c.name.toLowerCase().includes(query) || 
+               (c.industry && c.industry.toLowerCase().includes(query)) ||
+               (c.owner && c.owner.toLowerCase().includes(query));
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div class="empty-placeholder" style="grid-column: 1 / -1;">No clients found matching "${searchQuery}".</div>`;
+        return;
+      }
+
+      filtered.forEach(client => {
+        const activeBlocker = (client.timeline || []).find(t => t.type === 'blocker' && !t.completed);
+        const card = document.createElement('div');
+        card.className = 'client-overview-card';
+        card.onclick = () => {
+          currentClientId = client.id;
+          switchView('detail');
+        };
+
+        const lastCompleted = [...(client.timeline || [])].reverse().find(t => t.completed);
+        const currentStage = lastCompleted ? lastCompleted.title : 'Onboarding';
+
+        card.innerHTML = `
+          <div class="client-card-top">
+            <div class="client-avatar-info">
+              <div class="client-avatar">${client.name.split(' ').map(w => w[0]).slice(0,2).join('')}</div>
+              <div>
+                <div class="client-name">${client.name}</div>
+                <div class="client-sub">${client.industry || 'Client Account'} • ${client.owner || 'Lead'}</div>
+              </div>
+            </div>
+            <span class="status-badge ${activeBlocker ? 'status-blocked' : (client.status === 'onboarding' ? 'status-onboarding' : 'status-active')}">
+              ${activeBlocker ? 'BLOCKED' : client.status.toUpperCase()}
+            </span>
+          </div>
+
+          <div class="mini-pipeline">
+            <div class="mini-stage-label">
+              <span>Current Stage:</span>
+              <strong style="color:#2563eb;">${currentStage}</strong>
+            </div>
+            <div class="mini-stepper">
+              ${(client.timeline || []).map(t => `
+                <div class="mini-step ${t.type === 'blocker' && !t.completed ? 'blocked' : (t.completed ? 'completed' : '')}" title="${t.title} (${t.date})"></div>
+              `).join('')}
+            </div>
+          </div>
+
+          ${activeBlocker ? `
+            <div class="blocker-alert-strip">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span><strong>Blocker:</strong> ${activeBlocker.title}</span>
+            </div>
+          ` : ''}
+
+          <div class="card-footer-metrics">
+            <span>🎯 ${(client.milestones || []).length} Milestones</span>
+            <span>⏳ ${(client.upcoming || []).length} Upcoming</span>
+            <span style="color:#2563eb; font-weight:700;">View Dashboard →</span>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    // Modal Operations
+    function openAddTimelineModal(isBlocker = false) {
+      document.getElementById('timelineModal').classList.add('active');
+      document.getElementById('timelineEventTitle').value = '';
+      
+      const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      document.getElementById('timelineEventDate').value = dateStr;
+      
+      const typeSelect = document.getElementById('timelineEventType');
+      if (isBlocker) {
+        typeSelect.value = 'blocker';
+        document.getElementById('timelineModalTitle').textContent = '⚠️ Add Blocker to Timeline';
+        document.getElementById('timelineEventTitle').placeholder = 'e.g. Catalog API sync blocked';
+        document.getElementById('timelineIsCompleted').checked = false;
+        document.getElementById('blockerDetailsGroup').style.display = 'block';
+      } else {
+        typeSelect.value = 'journey';
+        document.getElementById('timelineModalTitle').textContent = 'Add Timeline Event / Stage';
+        document.getElementById('timelineEventTitle').placeholder = 'e.g. Onboarding Done, AI Agent Deployed, ADs Started, Payment Due';
+        document.getElementById('timelineIsCompleted').checked = true;
+        document.getElementById('blockerDetailsGroup').style.display = 'none';
+      }
+    }
+
+    function onTimelineTypeChange(val) {
+      if (val === 'blocker') {
+        document.getElementById('blockerDetailsGroup').style.display = 'block';
+        document.getElementById('timelineIsCompleted').checked = false;
+      } else {
+        document.getElementById('blockerDetailsGroup').style.display = 'none';
+      }
+    }
+
+    function closeTimelineModal() {
+      document.getElementById('timelineModal').classList.remove('active');
+    }
+
+    function handleTimelineSubmit(e) {
+      e.preventDefault();
+      const client = getCurrentClient();
+      const title = document.getElementById('timelineEventTitle').value.trim();
+      const date = document.getElementById('timelineEventDate').value.trim();
+      const type = document.getElementById('timelineEventType').value;
+      const completed = document.getElementById('timelineIsCompleted').checked;
+      const blockerDesc = document.getElementById('timelineBlockerDesc').value.trim();
+
+      const month = date.split(' ')[0] || 'Stage';
+      let tickColor = 'red';
+      if (type === 'payment') tickColor = 'blue';
+      if (type === 'milestone') tickColor = 'green';
+      if (type === 'blocker') tickColor = 'blocker';
+
+      client.timeline = client.timeline || [];
+      client.timeline.push({
+        id: 't_' + Date.now(),
+        title,
+        date,
+        month,
+        type,
+        completed,
+        tickColor,
+        desc: type === 'blocker' ? blockerDesc : undefined
+      });
+
+      if (type === 'blocker' && !completed) {
+        client.status = 'blocked';
+      }
+
+      saveData();
+      closeTimelineModal();
+      renderClientDetail();
+      showToast(type === 'blocker' ? '⚠️ Blocker added to timeline' : 'Timeline event added');
+    }
+
+    function openAddClientModal() {
+      editingClientId = null;
+      document.getElementById('clientModalTitle').textContent = 'Add New Client';
+      document.getElementById('newClientName').value = '';
+      document.getElementById('newClientIndustry').value = '';
+      document.getElementById('newClientOwner').value = '';
+      document.getElementById('newClientTier').value = '';
+      document.getElementById('newClientSlack').value = '';
+      document.getElementById('clientModal').classList.add('active');
+    }
+
+    function editCurrentClientInfo() {
+      const client = getCurrentClient();
+      editingClientId = client.id;
+      document.getElementById('clientModalTitle').textContent = 'Edit Client Details';
+      document.getElementById('newClientName').value = client.name || '';
+      document.getElementById('newClientIndustry').value = client.industry || '';
+      document.getElementById('newClientOwner').value = client.owner || '';
+      document.getElementById('newClientTier').value = client.tier || '';
+      document.getElementById('newClientSlack').value = client.slack || '';
+      document.getElementById('clientModal').classList.add('active');
+    }
+
+    function closeClientModal() {
+      document.getElementById('clientModal').classList.remove('active');
+    }
+
+    function handleClientSubmit(e) {
+      e.preventDefault();
+      const name = document.getElementById('newClientName').value.trim();
+      const industry = document.getElementById('newClientIndustry').value.trim();
+      const owner = document.getElementById('newClientOwner').value.trim();
+      const tier = document.getElementById('newClientTier').value.trim();
+      const slack = document.getElementById('newClientSlack').value.trim();
+
+      if (editingClientId) {
+        const client = clients.find(c => c.id === editingClientId);
+        if (client) {
+          client.name = name;
+          client.industry = industry;
+          client.owner = owner;
+          client.tier = tier;
+          client.slack = slack;
+          showToast('Client details updated');
+        }
+      } else {
+        const newId = 'client_' + Date.now();
+        const newClient = {
+          id: newId,
+          name,
+          industry,
+          owner: owner || 'Operations Lead',
+          tier: tier || 'Standard Retainer',
+          slack: slack || '#client-general',
+          status: 'onboarding',
+          timeline: [
+            { id: 't_' + (Date.now()+1), title: 'Onboarding Done', date: 'Today', month: 'Now', type: 'journey', completed: true, tickColor: 'red' },
+            { id: 't_' + (Date.now()+2), title: 'AI Agent Deployed', date: '+2 Weeks', month: 'Next', type: 'journey', completed: false, tickColor: 'red' },
+            { id: 't_' + (Date.now()+3), title: 'ADs Started', date: '+3 Weeks', month: 'Next', type: 'journey', completed: false, tickColor: 'red' },
+            { id: 't_' + (Date.now()+4), title: 'Payment Due', date: 'End of Month', month: 'Next', type: 'payment', completed: false, tickColor: 'blue' }
+          ],
+          milestones: [
+            { id: 'm_' + (Date.now()+1), text: 'Kickoff onboarding session', date: 'Today', done: true },
+            { id: 'm_' + (Date.now()+2), text: 'API Credentials & tokens provided', date: 'Upcoming', done: false }
+          ],
+          upcoming: [
+            { id: 'u_' + (Date.now()+1), text: 'Schedule AI Agent Prompt Walkthrough', date: 'This Week', priority: 'High' }
+          ],
+          dump: [
+            { id: 'd_' + (Date.now()+1), text: 'Initial scoping session went smoothly.' }
+          ],
+          notes: `Client created on ${new Date().toLocaleDateString()}.\nKey contacts and objectives to be populated.`
+        };
+        clients.push(newClient);
+        currentClientId = newId;
+        showToast(`Created new client: ${name}`);
+      }
+
+      saveData();
+      closeClientModal();
+      renderClientDetail();
+    }
+
+    function deleteCurrentClient() {
+      if (clients.length <= 1) {
+        alert("You must keep at least one client in the operations system.");
+        return;
+      }
+      const client = getCurrentClient();
+      if (confirm(`Are you sure you want to remove ${client.name}?`)) {
+        clients = clients.filter(c => c.id !== client.id);
+        currentClientId = clients[0].id;
+        saveData();
+        renderClientDetail();
+        showToast('Client removed');
+      }
+    }
+
+    function exportData() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(clients, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `opspulse-clients-backup-${new Date().toISOString().slice(0,10)}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      showToast('Exported clients backup JSON');
+    }
+
+    function resetDemoData() {
+      if (confirm("Reset dashboard to original sample data with Apex Retail AI, Starlight Health, and Nexus FinTech?")) {
+        localStorage.removeItem(STORAGE_KEY);
+        loadData();
+        currentClientId = clients[0].id;
+        renderClientDetail();
+        showToast('Reset to demo data!');
+      }
+    }
+
+    // Initialize
+    window.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      loadData();
+      renderClientDetail();
+    });
+  </script>
+</body>
+</html>
