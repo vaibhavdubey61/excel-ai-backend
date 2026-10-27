@@ -126,6 +126,13 @@ async def serve_admin(request: Request):
     return {"message": "Admin portal is loading."}
 
 
+@app.get("/ops")
+def serve_ops():
+    ops_path = os.path.join(STATIC_DIR, "ops.html")
+    if os.path.exists(ops_path):
+        return FileResponse(ops_path)
+    return {"message": "Ops dashboard is loading."}
+
 @app.post("/api/chat")
 async def chat_endpoint(
     request: Request,
