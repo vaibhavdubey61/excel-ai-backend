@@ -11,6 +11,7 @@ import csv
 import io
 from typing import Optional, List, Dict, Any, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -59,6 +60,14 @@ if os.path.exists(env_path):
 db.init_db()
 
 app = FastAPI(title="Excel AI Coach", version="2.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Anti-caching middleware: ensures users always receive latest frontend UI and scripts without stale browser caching
 @app.middleware("http")
@@ -359,6 +368,75 @@ async def generate_mcq_endpoint(req: MCQGenerateRequest):
             status_code=503,
             detail="The AI is busy right now. Please try again in a moment."
         )
+
+
+
+@app.post("/api/evaluate")
+async def evaluate_endpoint(
+    request: Request,
+    question: str = Form(...),
+    student_answer: Optional[str] = Form(""),
+    course: Optional[str] = Form("CA"),
+    level: Optional[str] = Form("Inter"),
+    subject: Optional[str] = Form(""),
+    total_marks: Optional[int] = Form(10),
+    file: Optional[UploadFile] = File(None)
+):
+    """
+    Evaluates student subjective exam answer papers against authentic ICAI BoS rubrics.
+    Supports multimodal inputs: photos of handwritten answers, PDF answer copies, or typed text.
+    Grounded in level-segregated Pinecone study materials.
+    """
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    if not chat_limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Too many evaluation requests. Please pause a moment.")
+
+    c_norm = syllabus.normalize_course(course or "CA")
+    l_norm = syllabus.normalize_level(c_norm, level or "Inter")
+
+    images = []
+    if file is not None and getattr(file, "filename", None):
+        try:
+            file_bytes = await file.read()
+            mime = file.content_type or "image/jpeg"
+            b64_str = base64.b64encode(file_bytes).decode("utf-8")
+            images.append({"data": b64_str, "mime_type": mime})
+        except Exception as file_err:
+            print(f"[Evaluation File Read Error]: {file_err}")
+
+    # Grounding: retrieve relevant study material from Pinecone
+    ns = syllabus.namespace(c_norm, l_norm)
+    chunks = []
+    if cloud_store.is_ready():
+        try:
+            raw_chunks = await asyncio.wait_for(
+                cloud_store.query(
+                    query_text=f"{subject} {question}".strip(),
+                    namespace=ns,
+                    top_k=5,
+                    subject=subject or None
+                ),
+                timeout=6.0
+            )
+            chunks = [c for c in raw_chunks if c.get("score", 0.0) >= MIN_SCORE]
+        except Exception as query_err:
+            print(f"[Evaluation Retrieval Notice]: {query_err}")
+
+    try:
+        result = await ai.evaluate_subjective_answer(
+            question=question,
+            student_answer=student_answer or "",
+            course=c_norm,
+            level=l_norm,
+            subject=subject or "",
+            total_marks=total_marks or 10,
+            images=images if images else None,
+            reference_chunks=chunks if chunks else None
+        )
+        return result
+    except Exception as e:
+        print(f"[Evaluation Engine Error]: {e}")
+        raise HTTPException(status_code=500, detail=f"Evaluation could not be completed: {str(e)}")
 
 
 @app.get("/api/syllabus")
