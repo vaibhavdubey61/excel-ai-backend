@@ -8,7 +8,7 @@ import os
 import re
 import sys
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
 import json
 import asyncio
 import argparse
@@ -23,7 +23,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST
+from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST, QuotaExhaustedError
 from ingest_materials import detect_subject, extract_chunks_from_pdf_stream
 import db
 import syllabus
@@ -31,6 +31,8 @@ import syllabus
 # Load environment keys
 env_path = os.path.join(ROOT_DIR, ".env")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_KEY_SECONDARY = os.getenv("GEMINI_API_KEY_SECONDARY", "")
+GEMINI_KEY_TERTIARY = os.getenv("GEMINI_API_KEY_TERTIARY", "")
 PINECONE_KEY = os.getenv("PINECONE_API_KEY", "")
 PINECONE_HOST = os.getenv("PINECONE_INDEX_HOST", PINECONE_INDEX_HOST)
 
@@ -44,6 +46,10 @@ if os.path.exists(env_path):
                     val = v.strip().strip('"').strip("'")
                     if k.strip() == "GEMINI_API_KEY" and not GEMINI_KEY:
                         GEMINI_KEY = val
+                    elif k.strip() == "GEMINI_API_KEY_SECONDARY" and not GEMINI_KEY_SECONDARY:
+                        GEMINI_KEY_SECONDARY = val
+                    elif k.strip() == "GEMINI_API_KEY_TERTIARY" and not GEMINI_KEY_TERTIARY:
+                        GEMINI_KEY_TERTIARY = val
                     elif k.strip() == "PINECONE_API_KEY" and not PINECONE_KEY:
                         PINECONE_KEY = val
                     elif k.strip() == "PINECONE_INDEX_HOST" and PINECONE_HOST == PINECONE_INDEX_HOST:
@@ -51,7 +57,12 @@ if os.path.exists(env_path):
     except Exception as e:
         print(f"[Warning reading .env]: {e}")
 
-cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINECONE_KEY, index_host=PINECONE_HOST)
+cloud_store = CloudVectorStore(
+    gemini_api_key=GEMINI_KEY,
+    pinecone_api_key=PINECONE_KEY,
+    index_host=PINECONE_HOST,
+    key_pool=[k for k in [GEMINI_KEY, GEMINI_KEY_SECONDARY, GEMINI_KEY_TERTIARY] if k]
+)
 CATALOG_FILE = os.path.join(ROOT_DIR, "cloud_catalog.json")
 
 # Preset Official ICAI BoS URLs
@@ -388,6 +399,9 @@ async def run_preset(preset: Dict[str, Any], download_only: bool = False):
                 update_progress_markdown(catalog)
             else:
                 print(f"      -> {res.get('status')}")
+        except QuotaExhaustedError:
+            print("\n[QUOTA NOTICE]: Daily embedding quota reached across all available API keys. Saving catalog and committing progress.")
+            break
         except Exception as err:
             print(f"      -> Error: {err}")
 

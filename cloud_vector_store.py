@@ -1,65 +1,110 @@
 import os
 from typing import List, Dict, Any, Optional
 import httpx
+import asyncio
 
 PINECONE_INDEX_HOST = "https://excel-ai-materials-dlalmyk.svc.aped-4627-b74a.pinecone.io"
 
+class QuotaExhaustedError(Exception):
+    """Raised when daily embedding quota is exhausted across all available API keys."""
+    pass
+
 class CloudVectorStore:
-    def __init__(self, gemini_api_key: str, pinecone_api_key: str, index_host: str = PINECONE_INDEX_HOST):
-        self.gemini_api_key = gemini_api_key
+    def __init__(
+        self,
+        gemini_api_key: str,
+        pinecone_api_key: str,
+        index_host: str = PINECONE_INDEX_HOST,
+        secondary_gemini_key: Optional[str] = None,
+        key_pool: Optional[List[str]] = None
+    ):
+        raw_pool = key_pool or [
+            gemini_api_key,
+            secondary_gemini_key or os.getenv("GEMINI_API_KEY_SECONDARY", "")
+        ]
+        self.keys = [k.strip() for k in raw_pool if k and len(k.strip()) > 15]
+        self.key_index = 0
+        self.active_key = self.keys[0] if self.keys else gemini_api_key
         self.pinecone_api_key = pinecone_api_key
         self.index_host = index_host.rstrip('/')
 
     def is_ready(self) -> bool:
         """Returns True if required API keys and index host are configured."""
-        return bool(self.gemini_api_key and self.pinecone_api_key and self.index_host)
+        return bool(self.active_key and self.pinecone_api_key and self.index_host)
+
+    def switch_to_next_key(self) -> bool:
+        """Rotates to next available key in pool if current key exhausted or invalid."""
+        if self.key_index + 1 < len(self.keys):
+            self.key_index += 1
+            self.active_key = self.keys[self.key_index]
+            print(f"[CloudVectorStore]: Switched to Key #{self.key_index + 1} ({self.active_key[:14]}...)...")
+            return True
+        return False
+
+    switch_to_secondary_key = switch_to_next_key
 
     async def get_embedding(self, text: str, task_type: str = "RETRIEVAL_QUERY") -> List[float]:
-        """Generates a 768-dim vector embedding using Google Gemini embedding model with specific taskType."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={self.gemini_api_key}"
-        payload = {
-            "model": "models/gemini-embedding-001",
-            "content": {
-                "parts": [{"text": text[:6000]}]
-            },
-            "taskType": task_type,
-            "outputDimensionality": 768
-        }
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code != 200:
-                raise Exception(f"Embedding error {resp.status_code}: {resp.text}")
-            return resp.json()["embedding"]["values"]
+        """Generates a 768-dim vector embedding with automatic multi-key failover."""
+        for attempt in range(len(self.keys) + 1):
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={self.active_key}"
+            payload = {
+                "model": "models/gemini-embedding-001",
+                "content": {
+                    "parts": [{"text": text[:6000]}]
+                },
+                "taskType": task_type,
+                "outputDimensionality": 768
+            }
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    return resp.json()["embedding"]["values"]
+                elif resp.status_code == 401:
+                    print(f"[CloudVectorStore]: Key {self.active_key[:12]}... returned 401. Switching key...")
+                    if self.switch_to_next_key():
+                        continue
+                    raise Exception("All configured Gemini API keys returned 401 Invalid.")
+                elif resp.status_code == 429:
+                    is_daily = "per day limit exceeded" in resp.text.lower() or "requestsperday" in resp.text.lower()
+                    if is_daily:
+                        if self.switch_to_next_key():
+                            continue
+                        raise QuotaExhaustedError("Daily embedding quota reached across all API keys.")
+                    # Short-term minute limit
+                    await asyncio.sleep(6)
+                else:
+                    raise Exception(f"Embedding error {resp.status_code}: {resp.text[:120]}")
+        raise Exception("Failed to obtain embedding after retry.")
 
     # Alias for querying convenience
     embed_query = get_embedding
 
     async def embed_batch(self, texts: List[str], task_type: str = "RETRIEVAL_DOCUMENT") -> List[List[float]]:
-        """Generates embeddings for a batch of texts using batchEmbedContents with 429 backoff retry."""
+        """Generates embeddings for a batch of texts using batchEmbedContents with 429 failover."""
         if not texts:
             return []
 
-        import asyncio
         all_embeddings: List[List[float]] = []
-        batch_size = 25  # 25 chunks (~7,000 tokens) safely below free tier 30,000 TPM limit
+        batch_size = 25  # Safely below free tier 30,000 TPM limit
 
         for i in range(0, len(texts), batch_size):
             chunk_texts = texts[i:i + batch_size]
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key={self.gemini_api_key}"
-            requests = [
-                {
-                    "model": "models/gemini-embedding-001",
-                    "content": {
-                        "parts": [{"text": t[:6000]}]
-                    },
-                    "taskType": task_type,
-                    "outputDimensionality": 768
-                }
-                for t in chunk_texts
-            ]
-
             batch_succeeded = False
-            for attempt in range(3):
+
+            for attempt in range(8):
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key={self.active_key}"
+                requests = [
+                    {
+                        "model": "models/gemini-embedding-001",
+                        "content": {
+                            "parts": [{"text": t[:6000]}]
+                        },
+                        "taskType": task_type,
+                        "outputDimensionality": 768
+                    }
+                    for t in chunk_texts
+                ]
+
                 try:
                     async with httpx.AsyncClient(timeout=45.0) as client:
                         resp = await client.post(url, json={"requests": requests})
@@ -70,26 +115,48 @@ class CloudVectorStore:
                                 all_embeddings.extend(embs)
                                 batch_succeeded = True
                                 break
+                        elif resp.status_code == 401:
+                            print(f"[embed_batch]: Key {self.active_key[:12]}... returned 401. Switching key...")
+                            if self.switch_to_next_key():
+                                continue
+                            raise Exception("All configured Gemini API keys returned 401 Invalid.")
                         elif resp.status_code == 429:
-                            wait_sec = 6 * (attempt + 1)
-                            print(f"[Rate limit 429 on embedding]: Pausing {wait_sec}s for quota window to reset...")
+                            is_daily = "per day limit exceeded" in resp.text.lower() or "requestsperday" in resp.text.lower()
+                            if is_daily:
+                                if self.switch_to_next_key():
+                                    print(f"[embed_batch]: Key daily quota reached. Retrying with Key #{self.key_index + 1}...")
+                                    continue
+                                else:
+                                    raise QuotaExhaustedError("Daily embedding quota reached across all API keys.")
+
+                            # Per-minute rate limit: parse retry delay or sleep 20s
+                            wait_sec = 20
+                            try:
+                                for d in resp.json().get("details", []):
+                                    if "retryDelay" in d:
+                                        wait_sec = int(float(d["retryDelay"].rstrip("s"))) + 2
+                            except Exception:
+                                pass
+                            print(f"[Rate limit 429 minute pause]: Pausing {wait_sec}s for minute window...")
                             await asyncio.sleep(wait_sec)
                         else:
                             print(f"[Embedding HTTP {resp.status_code}]: {resp.text[:80]}")
                             break
+                except QuotaExhaustedError:
+                    raise
                 except Exception as e:
-                    print(f"[batchEmbedContents retry notice]: {e}")
+                    print(f"[batchEmbedContents notice]: {e}")
                     await asyncio.sleep(2)
 
             if not batch_succeeded:
-                # Fallback to sequential get_embedding with delay
+                # Fallback to sequential get_embedding
                 for t in chunk_texts:
                     emb = await self.get_embedding(t, task_type=task_type)
                     all_embeddings.append(emb)
-                    await asyncio.sleep(0.15)
+                    await asyncio.sleep(0.20)
 
-            # Polite 350ms pause between batches to protect TPM quota
-            await asyncio.sleep(0.35)
+            # Polite 400ms pause between batches
+            await asyncio.sleep(0.40)
 
         return all_embeddings
 
