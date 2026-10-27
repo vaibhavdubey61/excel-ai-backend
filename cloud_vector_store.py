@@ -18,11 +18,40 @@ class CloudVectorStore:
         secondary_gemini_key: Optional[str] = None,
         key_pool: Optional[List[str]] = None
     ):
-        raw_pool = key_pool or [
-            gemini_api_key,
-            secondary_gemini_key or os.getenv("GEMINI_API_KEY_SECONDARY", "")
-        ]
-        self.keys = [k.strip() for k in raw_pool if k and len(k.strip()) > 15]
+        if key_pool is not None:
+            raw_pool = list(key_pool)
+        else:
+            raw_pool = [
+                gemini_api_key,
+                secondary_gemini_key or os.getenv("GEMINI_API_KEY_SECONDARY", ""),
+                os.getenv("GEMINI_API_KEY_TERTIARY", "")
+            ]
+            # Also parse .env if present
+            env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+            if os.path.exists(env_file):
+                try:
+                    with open(env_file, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line.startswith("#") and "=" in line:
+                                k, v = line.split("=", 1)
+                                if "GEMINI_API_KEY" in k.strip():
+                                    val = v.strip().strip('"').strip("'")
+                                    if val:
+                                        raw_pool.append(val)
+                except Exception:
+                    pass
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for k in raw_pool:
+            k_clean = k.strip() if k else ""
+            if k_clean and len(k_clean) > 15 and k_clean not in seen:
+                seen.add(k_clean)
+                deduped.append(k_clean)
+
+        self.keys = deduped
         self.key_index = 0
         self.active_key = self.keys[0] if self.keys else gemini_api_key
         self.pinecone_api_key = pinecone_api_key
@@ -45,7 +74,7 @@ class CloudVectorStore:
 
     async def get_embedding(self, text: str, task_type: str = "RETRIEVAL_QUERY") -> List[float]:
         """Generates a 768-dim vector embedding with automatic multi-key failover."""
-        for attempt in range(len(self.keys) + 1):
+        for attempt in range(5):
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={self.active_key}"
             payload = {
                 "model": "models/gemini-embedding-001",
@@ -55,7 +84,7 @@ class CloudVectorStore:
                 "taskType": task_type,
                 "outputDimensionality": 768
             }
-            async with httpx.AsyncClient(timeout=6.0) as client:
+            async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
                     return resp.json()["embedding"]["values"]
@@ -71,10 +100,11 @@ class CloudVectorStore:
                             continue
                         raise QuotaExhaustedError("Daily embedding quota reached across all API keys.")
                     # Short-term minute limit
-                    await asyncio.sleep(6)
+                    print(f"[get_embedding 429]: Pausing 15s for minute window...")
+                    await asyncio.sleep(15)
                 else:
                     raise Exception(f"Embedding error {resp.status_code}: {resp.text[:120]}")
-        raise Exception("Failed to obtain embedding after retry.")
+        raise Exception("Failed to obtain embedding after retries.")
 
     # Alias for querying convenience
     embed_query = get_embedding
@@ -155,8 +185,8 @@ class CloudVectorStore:
                     all_embeddings.append(emb)
                     await asyncio.sleep(0.20)
 
-            # Polite 400ms pause between batches
-            await asyncio.sleep(0.40)
+            # Polite 1.2s pause between batches to protect against 100 RPM limit
+            await asyncio.sleep(1.2)
 
         return all_embeddings
 
