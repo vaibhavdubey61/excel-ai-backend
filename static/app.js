@@ -626,18 +626,11 @@ function appendAssistantBubble(markdownText, scroll) {
                 ${renderedHtml}
             </div>
             ${mcqPillHtml}
-            <div class="pt-2 border-t border-[#333333] flex items-center justify-between text-xs text-neutral-400">
-                <span class="text-[11px] font-semibold text-amber-400/80">ICAI / ICSI Standard</span>
-                <div class="flex items-center gap-2">
-                    <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(cleanedText)}" title="Copy response" class="p-1 hover:text-white transition flex items-center gap-1 text-[11px] font-medium">
-                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                        <span>Copy</span>
-                    </button>
-                    <button onclick="readAloud(this)" data-text="${escapeQuotes(cleanedText.replace(/[#*`_]/g, ''))}" title="Listen to response" class="p-1 hover:text-amber-400 transition flex items-center gap-1 text-[11px] font-medium">
-                        <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>
-                        <span>Listen</span>
-                    </button>
-                </div>
+            <div class="pt-2 border-t border-[#333333] flex items-center justify-end text-xs text-neutral-400">
+                <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(cleanedText)}" title="Copy response" class="p-1 hover:text-white transition flex items-center gap-1 text-[11px] font-medium">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    <span>Copy</span>
+                </button>
             </div>
         </div>
     `;

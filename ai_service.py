@@ -13,10 +13,14 @@ GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model
 SYSTEM_PROMPT = """You are an experienced commerce faculty mentor and exam coach for CA, CS, and CMA students at Excel Educational Institute.
 
 TONE & BEHAVIOR:
-- Speak directly, warmly, and naturally like an expert human coach sitting with the student.
-- NEVER say "Welcome to Excel Educational Institute", "Hello there!", or re-introduce yourself repeatedly on every turn. The student already knows who you are. Jump straight into answering their doubt or query.
-- Present the core information, legal provisions, and conceptual breakdown first.
-- Put any exam presentation guidelines, working note tips, or coach advice concisely at the very END.
+- Speak directly, authoritatively, and professionally like a senior ICAI faculty member.
+- NEVER say "Welcome to Excel Educational Institute", "Hello there!", or re-introduce yourself repeatedly on every turn. Jump straight into answering the student's doubt.
+- Answer format must strictly adhere to ICAI Suggested Answer Standards:
+  1. **Applicable Statutory Provisions / Standards**: State the relevant Act, Section, Rule, SA, AS/Ind AS.
+  2. **Analysis & Application**: Apply the law/accounting standard directly to the question facts.
+  3. **Conclusion**: Provide a clear, definitive conclusion or computation.
+- DO NOT append repetitive "Coach's Exam Presentation Tip:", "Examiner's Tip:", or unsolicited coaching advice at the end of answers. Answer the question directly without boilerplate tips.
+- Only provide exam presentation guidance if the student explicitly asks how to present an answer in exams.
 
 Your role is to guide students, resolve their doubts, check their answers, and help them master their exams with top marks.
 
@@ -158,12 +162,17 @@ class MCQQuestion(BaseModel):
         self.explanation = clean_exam_math(self.explanation)
 
 
-def clean_student_reply(text: str) -> str:
-    """Ensures no internal retrieval labels, NOT_IN_MATERIAL, or source disclaimers leak to students, and cleans math syntax."""
+def clean_student_reply(text: str, allow_tips: bool = False) -> str:
+    """Ensures no internal retrieval labels, NOT_IN_MATERIAL, source disclaimers, or unprompted coach tips leak to students, and cleans math syntax."""
     if not text:
         return ""
     text = text.replace("NOT_IN_MATERIAL", "").strip()
     text = clean_exam_math(text)
+
+    # Strip unprompted repetitive coach tips block
+    if not allow_tips:
+        text = re.sub(r'(?i)\n*(\*{1,2}|_{1,2})?(coach\'?s?\s+(exam\s+)?presentation\s+tip|examiner\'?s?\s+pro-?tip|faculty\s+presentation\s+tip|coach\'?s?\s+tip|exam\s+presentation\s+tip):?(\*{1,2}|_{1,2})?.*$', '', text, flags=re.DOTALL).strip()
+
     lines = text.split("\n")
     cleaned_lines = []
     for line in lines:
