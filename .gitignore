@@ -10,3 +10,7 @@ study_materials/
 data/*.db
 *.exe
 client-dashboard/
+*.apk
+*.zip
+*.tgz
+mobile_app/
