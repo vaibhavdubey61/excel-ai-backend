@@ -38,54 +38,67 @@ cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINEC
 CATALOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_catalog.json")
 
 def detect_subject(file_path: str, course: str = "CA", level: str = "Foundation") -> str:
-    """Infers subject name accurately using paper numbers and word boundaries to prevent substring collisions."""
+    """Infers subject name accurately using paper numbers, syllabus level, and word boundaries to prevent substring collisions."""
     p = file_path.lower().replace(chr(92), "/")
+    lvl = (level or "").strip().lower()
     
-    # 0. Check paper prefix first if available
-    if "paper-1" in p or "paper 1" in p:
-        if "inter" in p or level.lower() == "inter":
-            return "CA_Inter_Advanced_Accounts"
-        if "final" in p or level.lower() == "final":
+    # 0. Check paper number with regex to support "paper-1", "paper 1", "paper -1", etc.
+    m_paper = re.search(r'paper\s*[-–—]?\s*([1-6])\b', p)
+    if m_paper:
+        p_num = m_paper.group(1)
+        if lvl == "final" or ("final" in p and not re.search(r'\b(foundation|inter|intermediate)\b', p)):
+            mapping = {
+                "1": "CA_Final_Financial_Reporting",
+                "2": "CA_Final_Advanced_Financial_Management",
+                "3": "CA_Final_Advanced_Auditing",
+                "4": "CA_Final_Direct_Tax",
+                "5": "CA_Final_Indirect_Tax",
+                "6": "CA_Final_Integrated_Business_Solutions"
+            }
+            if p_num in mapping:
+                return mapping[p_num]
+        elif lvl == "inter" or ("inter" in p and not re.search(r'\b(foundation|final)\b', p)):
+            mapping = {
+                "1": "CA_Inter_Advanced_Accounts",
+                "2": "CA_Inter_Corporate_Law",
+                "3": "CA_Inter_Taxation",
+                "4": "CA_Inter_Costing",
+                "5": "CA_Inter_Auditing",
+                "6": "CA_Inter_Financial_Management"
+            }
+            if p_num in mapping:
+                return mapping[p_num]
+        elif lvl == "foundation" or ("foundation" in p and not re.search(r'\b(inter|final)\b', p)):
+            mapping = {
+                "1": "CA_Foundation_Accounting",
+                "2": "CA_Foundation_Business_Laws",
+                "3": "CA_Foundation_Quantitative_Aptitude",
+                "4": "CA_Foundation_Business_Economics"
+            }
+            if p_num in mapping:
+                return mapping[p_num]
+
+    # Level-based fallback keyword matching
+    if lvl == "final" or "final" in p:
+        if "financial reporting" in p or " fr " in p or "fr-" in p:
             return "CA_Final_Financial_Reporting"
-        return "CA_Foundation_Accounting"
-
-    if "paper-2" in p or "paper 2" in p:
-        if "inter" in p or level.lower() == "inter":
-            return "CA_Inter_Corporate_Law"
-        if "final" in p or level.lower() == "final":
+        if "financial management" in p or "afm" in p:
             return "CA_Final_Advanced_Financial_Management"
-        return "CA_Foundation_Business_Laws"
-
-    if "paper-3" in p or "paper 3" in p:
-        if "inter" in p or level.lower() == "inter":
-            return "CA_Inter_Taxation"
-        if "final" in p or level.lower() == "final":
+        if "audit" in p or "ethics" in p or "assurance" in p:
             return "CA_Final_Advanced_Auditing"
-        return "CA_Foundation_Quantitative_Aptitude"
-
-    if "paper-4" in p or "paper 4" in p:
-        if "inter" in p or level.lower() == "inter":
-            return "CA_Inter_Costing"
-        if "final" in p or level.lower() == "final":
+        if "direct tax" in p or "international tax" in p or "dt " in p:
             return "CA_Final_Direct_Tax"
-        return "CA_Foundation_Business_Economics"
-
-    if "paper-5" in p or "paper 5" in p:
-        if "final" in p or level.lower() == "final":
+        if "indirect tax" in p or "gst" in p or "customs" in p or "idt " in p:
             return "CA_Final_Indirect_Tax"
-        return "CA_Inter_Auditing"
-
-    if "paper-6" in p or "paper 6" in p:
-        if "final" in p or level.lower() == "final":
+        if "integrated business" in p or "solutions" in p:
             return "CA_Final_Integrated_Business_Solutions"
-        return "CA_Inter_Financial_Management"
 
     # 1. Economics (word boundary to avoid 'reconciliation')
-    if re.search(r'(economics|eco)', p):
+    if re.search(r'\b(economics|eco)\b', p):
         return "CA_Foundation_Business_Economics"
     
     # 2. Maths / Quantitative Aptitude
-    if re.search(r'(quantitative|aptitude|maths|math|statistics|logical)', p):
+    if re.search(r'\b(quantitative|aptitude|maths|math|statistics|logical)\b', p):
         return "CA_Foundation_Quantitative_Aptitude"
     
     # 3. Business Laws
@@ -93,19 +106,19 @@ def detect_subject(file_path: str, course: str = "CA", level: str = "Foundation"
         return "CA_Foundation_Business_Laws"
     
     # 4. Tax / GST (Inter vs Final)
-    if re.search(r'(tax|taxation|gst|income-tax|direct tax|indirect tax)', p):
-        if "final" in p or level.lower() == "final":
+    if re.search(r'\b(tax|taxation|gst|income-tax|direct tax|indirect tax)\b', p):
+        if lvl == "final" or "final" in p:
             return "CA_Final_Direct_Tax"
         return "CA_Inter_Taxation"
     
     # 5. Audit (Inter vs Final)
     if "audit" in p:
-        if "final" in p or level.lower() == "final":
+        if lvl == "final" or "final" in p:
             return "CA_Final_Advanced_Auditing"
         return "CA_Inter_Auditing"
     
     # 6. Costing (Inter)
-    if re.search(r'(cost|costing|cma)', p):
+    if re.search(r'\b(cost|costing|cma)\b', p):
         return "CA_Inter_Costing"
     
     # 7. Corporate Law (Inter)
@@ -113,10 +126,10 @@ def detect_subject(file_path: str, course: str = "CA", level: str = "Foundation"
         return "CA_Inter_Corporate_Law"
     
     # 8. Accounts (Foundation vs Inter vs Final)
-    if re.search(r'(account|accounts|accounting|acc|financial reporting)', p):
-        if "final" in p or level.lower() == "final":
+    if re.search(r'\b(account|accounts|accounting|financial reporting)\b', p):
+        if lvl == "final" or "final" in p:
             return "CA_Final_Financial_Reporting"
-        if "inter" in p or "advanced" in p or level.lower() == "inter":
+        if lvl == "inter" or "advanced" in p or re.search(r'\binter\b', p):
             return "CA_Inter_Advanced_Accounts"
         return "CA_Foundation_Accounting"
 
