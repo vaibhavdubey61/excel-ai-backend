@@ -150,7 +150,8 @@ async def chat_endpoint(
     file: Optional[UploadFile] = File(None),
     course: Optional[str] = Form("CA"),
     level: Optional[str] = Form("Inter"),
-    history: Optional[str] = Form("[]")
+    history: Optional[str] = Form("[]"),
+    session_id: Optional[str] = Form(None)
 ):
     """Unified endpoint: queries Pinecone Cloud Vector DB in student's namespace and generates level-aware answers via Gemini."""
     client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
@@ -206,8 +207,9 @@ async def chat_endpoint(
                     history=[]
                 )
                 summary_reply = video_service.clean_video_summary(clean_student_reply(res.get("reply", "")))
-                if session_id:
-                    video_service.store_video_session(session_id, youtube_id, transcript, summary_reply)
+                effective_session = session_id or client_ip
+                if effective_session:
+                    video_service.store_video_session(effective_session, youtube_id, transcript, summary_reply)
                 return {"reply": summary_reply}
             except Exception as e:
                 print(f"[Video Summary Error]: {e}")
@@ -221,7 +223,8 @@ async def chat_endpoint(
             return {"reply": err_msg}
 
     # If this session has an active shared video, attach teaching context for doubt solving
-    active_video = video_service.get_video_session(session_id)
+    effective_session = session_id or client_ip
+    active_video = video_service.get_video_session(effective_session)
     if active_video and "transcript" in active_video:
         lecture_ctx = (
             f"[CONTEXT FROM SHARED TEACHING VIDEO ({active_video.get('video_id', '')})]:\n"
