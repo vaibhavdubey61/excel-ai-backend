@@ -2,9 +2,11 @@
 **Excel Educational Institute | Intelligent Exam Coach for CA, CS, and CMA Students**
 
 [![Cloud Backend](https://img.shields.io/badge/Render-Live_Cloud_Backend-46E3B7?style=flat-square&logo=render)](https://excel-ai-backend-yegx.onrender.com)
-[![Vector DB](https://img.shields.io/badge/Pinecone-Serverless_Cloud_AWS-000000?style=flat-square&logo=pinecone)](https://pinecone.io)
+[![Vector DB](https://img.shields.io/badge/Pinecone-11%2C748_Cloud_Vectors-000000?style=flat-square&logo=pinecone)](https://pinecone.io)
+[![CA Inter](https://img.shields.io/badge/CA_Inter-100%25_Indexed_(92%2F92_Ch)-success?style=flat-square)](https://boslive.icai.org)
+[![CA Final](https://img.shields.io/badge/CA_Final-Financial_Reporting_Indexed-blue?style=flat-square)](https://boslive.icai.org)
 [![AI Engine](https://img.shields.io/badge/Google_Gemini-Multi--Model_Failover-4285F4?style=flat-square&logo=google)](https://ai.google.dev/)
-[![Mobile App](https://img.shields.io/badge/React_Native-Expo_ChatGPT_UI-61DAFB?style=flat-square&logo=react)](https://expo.dev)
+[![Lecture Video AI](https://img.shields.io/badge/Lecture_Videos-Zero--Timestamp_Summary-rose?style=flat-square)](https://youtube.com)
 
 Excel AI Coach is an enterprise-grade AI exam preparation platform custom-built for **Excel Educational Institute**. It provides real-time level-aware doubt solving, exam-pattern working notes, interactive MCQ practice with instant scoring, handwritten answer sheet checking, and grounded study material ingestion via Retrieval-Augmented Generation (RAG).
 
@@ -41,10 +43,17 @@ python -m uvicorn app:app --port 8000
 * **Study Material & Admin Insights:** [http://localhost:8000/admin](http://localhost:8000/admin)
 
 ### 4. ICAI Study Material Ingestion Status & Resuming
-* **Ingestion Milestone Reached:** 44 Documents Indexed | 1,436 Pages Processed | 2,127 Cloud Vectors in Pinecone.
-* **CA Foundation (English):** 100% COMPLETE (18 chapters, 532 pages, 844 vectors in `ca-foundation`).
-* **CA Intermediate (English):** 14 Chapters/Modules Indexed (Advanced Accounting & Corporate Law in `ca-inter`).
-* **All 143 Chapter PDFs permanently stored on local disk** in `study_materials/`.
+* **Ingestion Milestone Reached:** 142+ Documents Indexed | 7,293+ Pages Processed | **11,748 Cloud Vectors** in Pinecone (`excel-ai-materials`).
+* **CA Intermediate (English — May 2026):** **100% COMPLETE (92/92 Chapters)** across all 6 papers:
+  - Paper 1 (Advanced Accounting): 10/10 ✅
+  - Paper 2 (Corporate & Other Laws): 15/15 ✅
+  - Paper 3 (Taxation - Direct Tax & GST): 19/19 ✅
+  - Paper 4 (Cost & Management Accounting): 17/17 ✅
+  - Paper 5 (Auditing and Ethics): 13/13 ✅
+  - Paper 6 (Financial Management & SM): 18/18 ✅
+  - Total: **8,776 vectors** live in Pinecone namespace `ca-inter`.
+* **CA Final (English — May 2026):** **20 Chapters Indexed** (Paper 1: Financial Reporting covering Ind AS 115, 103, 101, Conceptual Framework, Schedule III Annexure — **1,654 vectors** in namespace `ca-final`).
+* **CA Foundation (English):** 30 chapters indexed (**927 vectors** in namespace `ca-foundation`).
 * When Google's daily embedding quota resets (at midnight UTC) or with a fresh key in `.env`:
 ```cmd
 # Continue indexing remaining CA Intermediate (English) chapters:
@@ -251,6 +260,7 @@ Runs 10 standard CA examination questions across Foundation, Inter, and Final th
 * **Level-Aware Faculty Coach:** Speaks with authoritative warmth calibrated specifically to the student's course and level.
 * **Single-Turn Completeness:** Delivers complete statutory provisions and working notes without asking the student to "continue".
 * **Clean Indian Commerce Notation:** Formats math and variance formulas cleanly (`₹`, `×`, `[]`) without raw LaTeX artifacts.
+* **Teaching Lecture Video Summarization & Doubt Solving:** Students can paste any educational YouTube lecture URL into the chat. The AI Coach extracts the spoken transcript, generates a structured exam summary (**strictly zero timestamps or time codes**), and preserves the lecture context so students can ask follow-up doubts directly about what the faculty taught.
 * **Interactive MCQ Drill Modal:** 5, 10, or 15 question tests with hidden answers, immediate per-question reasoning, and summary review filters ("All" vs "Mistakes Only").
 * **Admin Telemetry & Gaps Detection:** Visualizes student inquiry volumes, material match percentages, average latencies, and material gaps for continuous curriculum enhancement.
 
