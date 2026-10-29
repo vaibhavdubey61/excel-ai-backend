@@ -23,6 +23,7 @@ from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST
 from ingest_materials import detect_subject
 import db
 import syllabus
+import video_service
 
 # Global in-memory registry for background ingestion jobs
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -189,6 +190,47 @@ async def chat_endpoint(
     if not user_text and not image_b64:
         raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
 
+    # 0. Check for YouTube / Teaching Lecture Video link
+    youtube_id = video_service.extract_youtube_video_id(user_text)
+    if youtube_id:
+        transcript, err = video_service.fetch_youtube_transcript_text(youtube_id)
+        if transcript:
+            summary_prompt = video_service.format_video_summary_prompt(
+                transcript, course=c_norm, level=l_norm, student_note=user_text
+            )
+            try:
+                res = await ai.get_response(
+                    message=summary_prompt,
+                    course=c_norm,
+                    level=l_norm,
+                    history=[]
+                )
+                summary_reply = video_service.clean_video_summary(clean_student_reply(res.get("reply", "")))
+                if session_id:
+                    video_service.store_video_session(session_id, youtube_id, transcript, summary_reply)
+                return {"reply": summary_reply}
+            except Exception as e:
+                print(f"[Video Summary Error]: {e}")
+                raise HTTPException(status_code=503, detail="The AI is busy summarizing the video. Please try again.")
+        elif err:
+            err_msg = (
+                f"I detected the YouTube lecture link (`{youtube_id}`), but could not access its captions ({err}).\n\n"
+                f"You can still ask any doubt from this class by typing the question or concept here, "
+                f"and I will explain it with full ICAI provisions and working notes!"
+            )
+            return {"reply": err_msg}
+
+    # If this session has an active shared video, attach teaching context for doubt solving
+    active_video = video_service.get_video_session(session_id)
+    if active_video and "transcript" in active_video:
+        lecture_ctx = (
+            f"[CONTEXT FROM SHARED TEACHING VIDEO ({active_video.get('video_id', '')})]:\n"
+            f"The student previously shared this lecture in chat and is now asking doubts from it.\n"
+            f"Faculty Spoken Transcript / Key Notes:\n{active_video.get('transcript', '')[:4000]}\n"
+            f"Answer the student's doubt directly using what the faculty explained in this video, aligning with ICAI standards.\n\n"
+        )
+        user_text = f"{lecture_ctx}Student's Doubt: {user_text}"
+
     # 1. Retrieval query building
     search_query = user_text
     if image_b64 and len(user_text.split()) < 4:
@@ -291,6 +333,45 @@ class MCQGenerateRequest(BaseModel):
     topic: Optional[str] = "Random"
     count: Optional[int] = 10
 
+
+
+class VideoSummarizeRequest(BaseModel):
+    video_url: str
+    course: Optional[str] = "CA"
+    level: Optional[str] = "Inter"
+    session_id: Optional[str] = ""
+    note: Optional[str] = ""
+
+
+@app.post("/api/video/summarize")
+async def summarize_video_endpoint(req: VideoSummarizeRequest):
+    """Generates an academic summary of a shared teaching video without timestamps."""
+    youtube_id = video_service.extract_youtube_video_id(req.video_url)
+    if not youtube_id:
+        raise HTTPException(status_code=400, detail="Invalid YouTube video URL. Please provide a valid link.")
+
+    transcript, err = video_service.fetch_youtube_transcript_text(youtube_id)
+    if not transcript:
+        raise HTTPException(status_code=422, detail=f"Could not retrieve captions from this video: {err}")
+
+    summary_prompt = video_service.format_video_summary_prompt(
+        transcript, course=req.course or "CA", level=req.level or "Inter", student_note=req.note
+    )
+    res = await ai.get_response(
+        message=summary_prompt,
+        course=req.course or "CA",
+        level=req.level or "Inter",
+        history=[]
+    )
+    clean_summary = video_service.clean_video_summary(clean_student_reply(res.get("reply", "")))
+    if req.session_id:
+        video_service.store_video_session(req.session_id, youtube_id, transcript, clean_summary)
+
+    return {
+        "success": True,
+        "video_id": youtube_id,
+        "summary": clean_summary
+    }
 
 @app.post("/api/mcq/generate")
 async def generate_mcq_endpoint(req: MCQGenerateRequest):

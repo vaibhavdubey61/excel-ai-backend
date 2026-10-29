@@ -182,12 +182,12 @@
                         <p class="text-neutral-400 mt-1 line-clamp-1">Step-wise marks out of 10 & examiner feedback</p>
                     </button>
 
-                    <button onclick="usePrompt('What are the statutory conditions and quantum limits for buy-back of shares under Section 68 of Companies Act?')" class="p-3 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-neutral-500 transition text-xs text-neutral-200">
+                    <button onclick="usePrompt('Summarize this lecture and help me solve doubts: https://www.youtube.com/watch?v=...')" class="p-3 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-rose-500/50 transition text-xs text-neutral-200">
                         <p class="font-bold text-white flex items-center gap-1.5">
-                            <i data-lucide="scale" class="w-3.5 h-3.5 text-indigo-400"></i>
-                            <span>Section 68 Buy-Back Rules</span>
+                            <i data-lucide="video" class="w-3.5 h-3.5 text-rose-400"></i>
+                            <span>Summarize Lecture Video</span>
                         </p>
-                        <p class="text-neutral-400 mt-1 line-clamp-1">Board resolution, debt-equity ratio & 25% limits</p>
+                        <p class="text-neutral-400 mt-1 line-clamp-1">Paste YouTube link for instant summary & doubt clearing</p>
                     </button>
 
                     <button onclick="openMcqModal()" class="p-3 rounded-2xl border border-[#333333] bg-[#2a2a2a] hover:bg-[#323232] hover:border-amber-500/50 transition text-xs text-neutral-200 text-left">
@@ -240,7 +240,7 @@
                     <input type="file" id="file-input" accept="image/*,.pdf" class="hidden" onchange="handleFileSelect(event)">
 
                     <!-- Textarea -->
-                    <textarea id="chat-input" rows="1" placeholder="Message Excel AI (Ask doubt, paste answer, or upload)..." class="flex-1 bg-transparent resize-none border-0 p-2 text-sm text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-0 max-h-36 leading-relaxed" onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+                    <textarea id="chat-input" rows="1" placeholder="Ask doubt, paste YouTube lecture link, or upload paper..." class="flex-1 bg-transparent resize-none border-0 p-2 text-sm text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-0 max-h-36 leading-relaxed" onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
 
                     <!-- Voice Note Mic Button -->
                     <button id="voice-btn" onclick="toggleVoiceInput()" title="Voice Note" class="p-2.5 rounded-full text-neutral-400 hover:text-amber-400 hover:bg-[#3a3a3a] transition flex-shrink-0">
