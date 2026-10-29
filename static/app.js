@@ -479,18 +479,35 @@ async function sendMessage() {
     }));
     formData.append("history", JSON.stringify(historyList));
 
+    const activeSessionId = session.id || currentSessionId || "";
+    if (activeSessionId) formData.append("session_id", activeSessionId);
+
     try {
         const resp = await fetch("/api/chat", {
             method: "POST",
             body: formData
         });
-        const data = await resp.json();
+        let data = {};
+        try {
+            data = await resp.json();
+        } catch (jsonErr) {
+            console.warn("Non-JSON server response:", jsonErr);
+        }
 
         // Remove loading state
         const loader = document.getElementById(loadingId);
         if (loader) loader.remove();
 
-        const replyMarkdown = data.reply || data.detail || "I could not generate an answer right now. Please try again.";
+        let replyMarkdown = data.reply || data.detail;
+        if (!replyMarkdown) {
+            if (resp.status === 503) {
+                replyMarkdown = "The AI is busy summarizing the lecture or analyzing materials. Please try again in a moment.";
+            } else if (resp.status >= 500) {
+                replyMarkdown = "⚠️ The Excel AI server encountered a temporary delay. Please re-send your question or try again.";
+            } else {
+                replyMarkdown = "I could not generate an answer right now. Please try again.";
+            }
+        }
 
         // 4. Render Assistant Bubble
         appendAssistantBubble(replyMarkdown, true);
@@ -503,10 +520,10 @@ async function sendMessage() {
         saveSessionsToStorage();
 
     } catch (err) {
-        console.error(err);
+        console.error("Chat communication error:", err);
         const loader = document.getElementById(loadingId);
         if (loader) loader.remove();
-        alert("Failed to communicate with Excel AI server.");
+        appendAssistantBubble("⚠️ **Connection Notice:** Unable to reach the Excel AI server right now. Please check your network connection or try again in a moment.", true);
     }
 }
 

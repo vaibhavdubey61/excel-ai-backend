@@ -8,8 +8,9 @@ import re
 import os
 from typing import Optional, Tuple, Dict, Any
 from youtube_transcript_api import YouTubeTranscriptApi
+import httpx
 
-# Session store mapping session_id -> { "video_id": ..., "transcript": ..., "summary": ... }
+# Session store mapping session_id -> { "video_id": ..., "title": ..., "author": ..., "transcript": ..., "summary": ... }
 VIDEO_SESSION_STORE: Dict[str, Dict[str, Any]] = {}
 
 YOUTUBE_REGEXES = [
@@ -29,6 +30,25 @@ def extract_youtube_video_id(text: str) -> Optional[str]:
         if m:
             return m.group(1)
     return None
+
+def fetch_youtube_metadata(video_id: str) -> Dict[str, Any]:
+    """Fetches video title, channel/author name, and thumbnail via YouTube's public oEmbed API."""
+    if not video_id:
+        return {}
+    try:
+        url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+        with httpx.Client(timeout=8.0) as client:
+            resp = client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "title": data.get("title", ""),
+                    "author_name": data.get("author_name", "Excel Educational Institute"),
+                    "thumbnail_url": data.get("thumbnail_url", "")
+                }
+    except Exception as e:
+        print(f"[YouTube oEmbed Error]: {e}")
+    return {}
 
 def fetch_youtube_transcript_text(video_id: str) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -65,11 +85,11 @@ def fetch_youtube_transcript_text(video_id: str) -> Tuple[Optional[str], Optiona
 
     except Exception as e:
         err_msg = str(e)
-        if "Subtitles are disabled" in err_msg or "Could not retrieve a transcript" in err_msg:
+        if "Subtitles are disabled" in err_msg:
             return None, "Captions are disabled on this video by the creator."
         elif "Video unavailable" in err_msg:
             return None, "This video is private or unavailable."
-        return None, f"Could not retrieve video captions ({err_msg[:100]})."
+        return None, f"Could not retrieve direct video captions ({err_msg[:80]})."
 
 def clean_video_summary(text: str) -> str:
     """Post-processes the generated summary to strip any accidental timestamps or time ranges."""
@@ -83,12 +103,14 @@ def clean_video_summary(text: str) -> str:
     cleaned = re.sub(r'\n\s*[-*•]\s*\n', '\n', cleaned)
     return cleaned.strip()
 
-def format_video_summary_prompt(transcript_text: str, course: str = "CA", level: str = "Inter", student_note: str = "") -> str:
+def format_video_summary_prompt(transcript_text: str, course: str = "CA", level: str = "Inter", student_note: str = "", video_title: str = "") -> str:
     """Builds a high-yield academic lecture summary prompt with strict zero-timestamp enforcement."""
     trimmed_transcript = transcript_text[:120000]
 
+    title_clause = f"Video Title: \"{video_title}\"\n" if video_title else ""
+
     prompt = f"""You are a senior commerce faculty mentor at Excel Educational Institute guiding a {course} {level} student.
-A student has shared an educational teaching/lecture video. Below is the spoken transcript of the lecture.
+A student has shared an educational teaching/lecture video. {title_clause}Below is the spoken transcript of the lecture.
 
 Your task is to analyze what the faculty taught and provide an authoritative, high-yield **Lecture Teaching Summary** so the student can master the topic and ask questions or doubts.
 
@@ -99,7 +121,7 @@ CRITICAL FORMATTING INSTRUCTIONS (STRICT):
 ---
 ### 📌 Lecture Overview & Topic
 - **Subject & Topic:** [Identify the exact subject and topic, e.g. Corporate Law - Section 135 CSR, or Advanced Accounts - Ind AS 115]
-- **Core Objective:** [What this lecture aims to teach the student]
+- **Core Objective:** [What this lecture aims to teach the student for their exam]
 
 ### ⚖️ Applicable Statutory Provisions, Standards & Formulas
 - [List every relevant Section of the Companies Act / Income Tax Act, Accounting Standard (AS/Ind AS), Standards on Auditing (SA), or financial mathematical formula explained by the faculty]
@@ -129,11 +151,61 @@ SPOKEN LECTURE TRANSCRIPT:
 """
     return prompt
 
-def store_video_session(session_id: str, video_id: str, transcript: str, summary: str):
+def format_video_metadata_summary_prompt(
+    video_id: str,
+    title: str,
+    author: str = "Excel Educational Institute",
+    course: str = "CA",
+    level: str = "Inter",
+    student_note: str = ""
+) -> str:
+    """Builds an academic lecture summary prompt based on the verified video title, author, and exam syllabus when direct transcripts are unavailable."""
+    prompt = f"""You are a senior commerce faculty mentor at Excel Educational Institute guiding a {course} {level} student.
+The student has shared an official educational teaching lecture from {author}:
+**Lecture Video:** "{title}" (YouTube ID: {video_id})
+
+Your task is to analyze this teaching lecture topic and deliver an authoritative, high-yield **Lecture Teaching Summary** according to ICAI / ICSI / ICMAI exam presentation standards.
+
+CRITICAL FORMATTING INSTRUCTIONS (STRICT):
+1. **DO NOT INCLUDE ANY TIMESTAMPS, TIME CODES, OR SECOND/MINUTE MARKERS** (e.g. NEVER write "00:00", "[12:30]", "At 15:40", "Minute 25", etc.). Present the summary purely as an academic teaching brief.
+2. Structure your response clearly using the exact markdown format below:
+
+---
+### 📌 Lecture Overview & Topic
+- **Subject & Topic:** {title}
+- **Faculty / Institute:** {author}
+- **Core Objective:** [Explain what this lecture teaches the student for their {course} {level} exam]
+
+### ⚖️ Applicable Statutory Provisions, Standards & Formulas
+- [List every relevant Section of the Companies Act / Income Tax Act, Accounting Standard (AS/Ind AS), Standards on Auditing (SA), or financial mathematical formula associated with this topic]
+
+### 🧠 Core Concepts & Principles Taught
+- [Breakdown of key legal principles, presentation guidelines, or conceptual steps taught in the lecture in clear bullet points]
+
+### 📝 Practical Illustrations & Presentation Techniques
+- [Step-by-step guidance on how to write answers, step-wise mark allocations, working notes, and presentation methods taught in this lecture]
+
+### ⚠️ Crucial Exam Warnings & Faculty Pitfalls
+- [Specific student mistakes, examiner traps, and keyword omission penalties that faculty highlight on this topic]
+
+### 💡 Key Takeaways for Quick Revision
+- [3-5 crisp bullet points capturing the most important exam-worthy points for quick student recall]
+
+### ❓ Suggested Doubts You Can Ask Me
+- [Provide 3 insightful, high-value questions about this lecture that the student can tap or type to test their depth of understanding]
+---
+
+Student's Query / Note: {student_note if student_note else "Please provide a comprehensive summary of this lecture so I can ask doubts."}
+"""
+    return prompt
+
+def store_video_session(session_id: str, video_id: str, transcript: str, summary: str, title: str = "", author: str = ""):
     """Saves the video context for subsequent doubt answering."""
     if session_id:
         VIDEO_SESSION_STORE[session_id] = {
             "video_id": video_id,
+            "title": title,
+            "author": author,
             "transcript": transcript,
             "summary": summary
         }

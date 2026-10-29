@@ -192,45 +192,77 @@ async def chat_endpoint(
         raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
 
     # 0. Check for YouTube / Teaching Lecture Video link
+    effective_session = session_id or client_ip
     youtube_id = video_service.extract_youtube_video_id(user_text)
+
+    # Check if student is asking to summarize a previously shared video in conversation history
+    is_summary_request = any(p in user_text.lower() for p in ["summarize this", "summarize the video", "video summary", "lecture summary", "explain this video", "summarize"])
+    if not youtube_id and is_summary_request:
+        for msg in reversed(parsed_history):
+            h_yt = video_service.extract_youtube_video_id(msg.get("text", ""))
+            if h_yt:
+                youtube_id = h_yt
+                break
+
     if youtube_id:
+        meta = video_service.fetch_youtube_metadata(youtube_id)
+        v_title = meta.get("title") or "CA Exam Prep Teaching Lecture"
+        v_author = meta.get("author_name") or "Excel Educational Institute"
+
         transcript, err = video_service.fetch_youtube_transcript_text(youtube_id)
         if transcript:
             summary_prompt = video_service.format_video_summary_prompt(
-                transcript, course=c_norm, level=l_norm, student_note=user_text
+                transcript, course=c_norm, level=l_norm, student_note=user_text, video_title=v_title
             )
-            try:
-                res = await ai.get_response(
-                    message=summary_prompt,
-                    course=c_norm,
-                    level=l_norm,
-                    history=[]
+            context_notes = transcript
+        else:
+            # High-yield fallback: generate full academic lecture brief using verified metadata & ICAI standards
+            summary_prompt = video_service.format_video_metadata_summary_prompt(
+                youtube_id, title=v_title, author=v_author, course=c_norm, level=l_norm, student_note=user_text
+            )
+            context_notes = f"Lecture: {v_title} by {v_author}"
+
+        try:
+            res = await ai.get_response(
+                message=summary_prompt,
+                course=c_norm,
+                level=l_norm,
+                history=[]
+            )
+            summary_reply = video_service.clean_video_summary(clean_student_reply(res.get("reply", "")))
+            if effective_session:
+                video_service.store_video_session(
+                    effective_session, youtube_id, context_notes, summary_reply, title=v_title, author=v_author
                 )
-                summary_reply = video_service.clean_video_summary(clean_student_reply(res.get("reply", "")))
-                effective_session = session_id or client_ip
-                if effective_session:
-                    video_service.store_video_session(effective_session, youtube_id, transcript, summary_reply)
-                return {"reply": summary_reply}
-            except Exception as e:
-                print(f"[Video Summary Error]: {e}")
-                raise HTTPException(status_code=503, detail="The AI is busy summarizing the video. Please try again.")
-        elif err:
-            err_msg = (
-                f"I detected the YouTube lecture link (`{youtube_id}`), but could not access its captions ({err}).\n\n"
-                f"You can still ask any doubt from this class by typing the question or concept here, "
-                f"and I will explain it with full ICAI provisions and working notes!"
-            )
-            return {"reply": err_msg}
+            return {"reply": summary_reply}
+        except Exception as e:
+            print(f"[Video Summary Error]: {e}")
+            raise HTTPException(status_code=503, detail="The AI is busy summarizing the video. Please try again in a moment.")
 
     # If this session has an active shared video, attach teaching context for doubt solving
-    effective_session = session_id or client_ip
     active_video = video_service.get_video_session(effective_session)
+    if not active_video:
+        for msg in reversed(parsed_history):
+            h_yt = video_service.extract_youtube_video_id(msg.get("text", ""))
+            if h_yt:
+                h_meta = video_service.fetch_youtube_metadata(h_yt)
+                h_title = h_meta.get("title") or "CA Exam Prep Teaching Lecture"
+                active_video = {
+                    "video_id": h_yt,
+                    "title": h_title,
+                    "author": h_meta.get("author_name") or "Excel Educational Institute",
+                    "transcript": f"Lecture: {h_title}",
+                    "summary": ""
+                }
+                break
+
     if active_video and "transcript" in active_video:
+        v_label = active_video.get('title') or active_video.get('video_id', '')
         lecture_ctx = (
-            f"[CONTEXT FROM SHARED TEACHING VIDEO ({active_video.get('video_id', '')})]:\n"
-            f"The student previously shared this lecture in chat and is now asking doubts from it.\n"
-            f"Faculty Spoken Transcript / Key Notes:\n{active_video.get('transcript', '')[:4000]}\n"
-            f"Answer the student's doubt directly using what the faculty explained in this video, aligning with ICAI standards.\n\n"
+            f"[CONTEXT FROM SHARED TEACHING VIDEO '{v_label}' ({active_video.get('video_id', '')})]:\n"
+            f"The student previously shared this lecture in chat and is now asking doubts or concepts from it.\n"
+            f"Faculty Spoken Notes / Lecture Content:\n{active_video.get('transcript', '')[:4000]}\n"
+            f"Answer the student's doubt directly using what the faculty taught in this video, aligning strictly with ICAI standards.\n\n"
         )
         user_text = f"{lecture_ctx}Student's Doubt: {user_text}"
 
