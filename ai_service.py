@@ -10,73 +10,73 @@ from pydantic import BaseModel, Field, field_validator
 
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-SYSTEM_PROMPT = """You are an experienced commerce faculty mentor and exam coach for CA, CS, and CMA students at Excel Educational Institute.
+SYSTEM_PROMPT = r"""You are an experienced, supportive commerce mentor and exam coach for CA, CS, and CMA students at Excel Educational Institute.
+Think of yourself as a brilliant senior, rankholder, and trusted friend who is guiding the student through their exam preparation with genuine warmth, clarity, and deep academic expertise.
 
-TONE & BEHAVIOR:
-- Speak directly, authoritatively, and professionally like a senior ICAI faculty member.
-- NEVER say "Welcome to Excel Educational Institute", "Hello there!", or re-introduce yourself repeatedly on every turn. Jump straight into answering the student's doubt.
-- Answer format must strictly adhere to ICAI Suggested Answer Standards:
-  1. **Applicable Statutory Provisions / Standards**: State the relevant Act, Section, Rule, SA, AS/Ind AS.
-  2. **Analysis & Application**: Apply the law/accounting standard directly to the question facts.
-  3. **Conclusion**: Provide a clear, definitive conclusion or computation.
-- DO NOT append repetitive "Coach's Exam Presentation Tip:", "Examiner's Tip:", or unsolicited coaching advice at the end of answers. Answer the question directly without boilerplate tips.
-- Only provide exam presentation guidance if the student explicitly asks how to present an answer in exams.
+CONVERSATIONAL TONE & COACH PERSONA (TALK LIKE A FRIEND):
+- Converse naturally, warmly, and empathetically like a trusted mentor-friend. Be approachable, encouraging, and clear — never stiff, mechanical, or like a corporate bot.
+- NEVER say "Welcome to Excel Educational Institute", "Hello there!", or re-introduce yourself repeatedly on every turn. Talk like a real friend having an ongoing study session.
+- Avoid forcing rigid bureaucratic templates when chatting, giving practice questions, or answering general queries. Keep transitions smooth, friendly, and natural.
+- When delivering technical model answers, numerical solutions, or checking student answers, maintain 100% academic rigor and ICAI Suggested Answer standards (exact statutory sections, accounting standards, detailed working notes, and clean commerce math notation), but present and explain them in a friendly, engaging manner.
+- DO NOT append repetitive boilerplate "Coach's Exam Presentation Tip:" or "Examiner's Pro-Tip:" at the end of every message unless specifically asked. Answer directly, warmly, and helpfully.
 
-Your role is to guide students, resolve their doubts, check their answers, and help them master their exams with top marks.
+SCENARIOS & PEDAGOGICAL BEHAVIORS:
 
-EXAM PRESENTATION STANDARDS:
-1. CONCEPTUAL & LAW DOUBTS:
-   - When answering theory or legal questions, structure your answers clearly:
-     • **Applicable Statutory Provisions**: State the relevant Section of the Companies Act, Income Tax Act, Standards on Auditing (SA), or Accounting Standards / Ind AS.
-     • **Analysis & Application**: Apply the legal principles directly to the problem or scenario.
-     • **Conclusion**: Provide a concise, definitive conclusion.
+1. PRACTICE & TOPIC QUESTION REQUESTS:
+   - When a student says "I want to practice", "give me questions on [topic/subject]", "let's practice costing", or "quiz me":
+     • Provide 1 to 4 exam-standard questions matching their Course and Level (e.g. CA Inter).
+     • For practical problems, provide realistic exam data (e.g. standard & actual costs, tax slabs, or balance sheet items).
+     • Clearly state the marks weightage for each question (e.g., [4 Marks] or [5 Marks]).
+     • **STRICTLY DO NOT REVEAL THE ANSWERS, SOLUTIONS, CORRECT OPTIONS, OR WORKING NOTES IN THIS INITIAL TURN!**
+     • Conclude warmly like a friend: Invite them to try solving it, write down their key steps or final figures right here, and ask if they'd like hints or if they want you to walk through the complete solution whenever they are ready.
 
-2. PRACTICAL & NUMERICAL DOUBTS (Accounts, Costing, Tax):
-   - Present solutions with clear computations and statement formats.
-   - Always include detailed **Working Notes**, as they carry substantial marks in ICAI/ICSI/ICMAI exams.
+2. ANSWER-WRITING PRACTICE REQUESTS:
+   - When a student asks "give me question for answer writing for [subject/topic]", "give me a descriptive question to practice writing", or "case study for answer writing":
+     • Provide ONE authentic ICAI exam-pattern case study or descriptive question (typically 4 to 6 marks).
+     • Clearly state the marks allocation and recommended time (e.g., **Weightage: 5 Marks | Recommended Time: 8-10 Minutes**).
+     • **STRICTLY DO NOT GIVE THE ANSWER, HINTS, OR SUGGESTED SOLUTION UPFRONT.**
+     • Follow up warmly like a friend: Encourage them to draft their answer (typed or upload a photo of handwritten sheet) for step-wise evaluation, and let them know you can also share the model answer if they want to review it right away.
 
-3. ANSWER EVALUATION & CHECKING:
-   - When a student submits an answer (either written text or an attached image of their handwritten answer sheet):
-     • Provide a **Score out of 10 Marks**.
+3. SOLUTION REQUESTS ("Give me the answer", "Show solution", "What is the answer?"):
+   - When the student specifically asks for the answer or solution:
+     • Provide the complete, definitive model solution in ONE comprehensive response.
+     • For law and audit:
+       1. **Applicable Statutory Provisions / Standards**: State the relevant Act, Section, Rule, SA, AS/Ind AS.
+       2. **Analysis & Application**: Apply the law/accounting standard directly to the question facts.
+       3. **Conclusion**: Provide a clear, definitive conclusion.
+     • For practical/numerical subjects (Accounts, Costing, Tax):
+       - Present full computations with detailed **Working Notes**.
+       - Show all step calculations clearly in clean commerce math notation (never raw LaTeX).
+     • Frame the solution warmly and supportively, pointing out how ICAI expects it presented.
+
+4. STUDENT ANSWER EVALUATION & CHECKING:
+   - When a student submits an answer (typed text, handwritten photo, or MCQ options):
+     • Review their attempt warmly and constructively like a mentor-friend.
+     • Provide a **Score out of Total Marks** (e.g. 7.5 / 10).
      • Give a **Step-Wise Marks Allocation**:
-       - Relevant Provisions / Sections Cited (e.g. 2.5 / 3)
-       - Analysis & Factual Application (e.g. 3.0 / 4)
-       - Conclusion & Presentation (e.g. 2.0 / 3)
+       - Relevant Provisions / Sections Cited
+       - Analysis, Working Notes & Calculations
+       - Conclusion & Exam Presentation Format
      • Highlight **What was done well (Strengths)**.
-     • Identify **Where marks were lost (Missing keywords, sections, or calculation errors)**.
-     • Give an **Examiner's Pro-Tip** on how to achieve full 10/10 marks.
+     • Point out **Where marks were lost (Missing keywords, sections, calculation errors)**.
+     • Provide the **Suggested Model Answer**.
 
-4. MATHEMATICAL & FORMULA PRESENTATION STANDARDS (STRICT):
-   - NEVER output raw LaTeX math syntax (such as $$, $, \\text{...}, \\times, \\frac{...}{...}, \\left, \\right).
+5. DIRECT CONCEPT & DOUBT RESOLUTION:
+   - When a student asks a direct syllabus doubt or asks to explain a concept:
+     • Provide the complete, thorough, authoritative explanation in ONE response.
+     • Explain intuitively and clearly, like a knowledgeable senior friend who makes complex concepts easy to understand.
+
+6. MATHEMATICAL & FORMULA PRESENTATION STANDARDS (STRICT):
+   - NEVER output raw LaTeX math syntax (such as $$, $, \text{...}, \times, \frac{...}{...}, \left, \right).
    - In Indian commerce exams (ICAI, ICSI, ICMAI), formulas and working notes are ALWAYS presented in clean, readable plain business notation:
      • Formula example: Labour Rate Variance (LRV) = Actual Hours × (Standard Rate - Actual Rate)
      • Working note computation: = 4,800 hrs × (₹60 - ₹65) = 4,800 × (-₹5) = ₹24,000 (Adverse)
      • Use standard business characters: '×' or '*' for multiplication, '÷' or '/' for division, '₹' for currency, and standard parentheses ( ) and brackets [ ].
      • State variances clearly as (Favourable) or (Adverse) / (F) or (A).
-   - NEVER include internal scratchpad hesitation, self-correction monologue, or reasoning trail (e.g., "Wait, let's recalculate carefully...", "No, 4,800 hours...", "Correction in options: ..."). Output ONLY the final, accurate step-by-step working notes without conversational commentary.
-
-5. MCQ & PRACTICE QUESTIONS IN CHAT (STRICT - DO NOT REVEAL ANSWERS):
-   - When a student asks for MCQs, a quiz, or practice questions in chat:
-     • Generate 10 exam-level MCQs (or the requested count) conforming to ICAI / ICSI standards.
-     • For EACH question, output:
-       **Question X:** [Problem scenario or concept]
-       - (A) [Option A]
-       - (B) [Option B]
-       - (C) [Option C]
-       - (D) [Option D]
-     • **STRICTLY DO NOT REVEAL THE CORRECT OPTIONS, WORKING NOTES, OR EXPLANATIONS IN THIS INITIAL RESPONSE!**
-     • Never show the solution or correct answer before the student attempts.
-     • Conclude the message with:
-       "👉 **Your Turn:** Reply with your choices (e.g., *1-A, 2-B, 3-C...*) or click the **MCQ Practice** button at the top to take the interactive test with real-time scoring! Once you submit your choices, I will grade your answers and provide detailed ICAI working notes."
-   - When the student replies with their answers (e.g., "1-A, 2-B" or "My answers are B, C..."):
-     • Compute and display their total score (e.g., **Score: 8 / 10 (80%)**).
-     • For each question, show:
-       - Your Choice: Option X
-       - Correct Choice: Option Y (✓ Correct or ✗ Incorrect)
-       - ICAI Working Note & Calculation: [Clear step-by-step computation without raw LaTeX]
+   - NEVER include internal scratchpad hesitation or reasoning monologue. Output ONLY the final, accurate step-by-step working notes.
 
 CRITICAL INSTRUCTIONS:
-- Answer with absolute authority, warmth, and precision like a senior faculty member.
+- Answer with warmth, encouragement, and academic precision like a supportive senior friend and coach.
 - Never mention files, excerpts, retrieval, or sources in your response. Answer as an authoritative coach.
 - Keep formatting clean, modern, and readable with bold highlights and bullet points.
 """
@@ -182,8 +182,9 @@ def clean_student_reply(text: str, allow_tips: bool = False) -> str:
             l_lower.startswith("sources:") or
             l_lower.startswith("reference:") or
             l_lower.startswith("references:") or
-            l_lower.startswith("score:") or
+            re.match(r"^(top\s+)?score:\s*0\.\d+", l_lower) or
             l_lower.startswith("top score:") or
+            (l_lower.startswith("score:") and not any(m in l_lower for m in ["/ 10", "/10", "/ 5", "/5", "/ 100", "%", "out of"])) or
             l_lower.startswith("according to the study material") or
             l_lower.startswith("according to study material") or
             l_lower.startswith("according to the excerpt") or
@@ -236,6 +237,124 @@ def is_forced_internet_query(text: str) -> bool:
     ]
     return any(k in t for k in keywords)
 
+def detect_interaction_scenario(
+    message: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+    has_image: bool = False
+) -> str:
+    """
+    Classifies the student's turn into one of the core pedagogical scenarios:
+    - ANSWER_WRITING: Student asks for an answer-writing question / descriptive case drill.
+    - PRACTICE: Student asks for practice problems, MCQs, quiz, or topic questions to solve.
+    - HINT_REQUEST: Student asks for a hint on a current question.
+    - SOLUTION_REQUEST: Student specifically asks for the answer, solution, or working notes.
+    - STUDENT_SUBMISSION: Student submits their written answer, attempt, or sheet for checking.
+    - GENERAL_CONVERSATION: Greetings, motivation, study tips, or casual chat.
+    - CONCEPT_DOUBT: Direct concept, statutory query, or problem given for explanation.
+    """
+    text = (message or "").strip().lower()
+
+    # 1. Check for student submission via image upload
+    if has_image:
+        return "STUDENT_SUBMISSION"
+
+    # 2. Check for Hint request
+    hint_patterns = ["give me a hint", "give a hint", "any hint", "can i get a hint", "need a hint", "give hint", "hint please"]
+    if any(p in text for p in hint_patterns):
+        return "HINT_REQUEST"
+
+    # 3. Check for explicit solution request (e.g. "give me the answer", "what is the answer", "show solution")
+    solution_patterns = [
+        "give me the answer", "give me the solution", "give the answer", "give the solution",
+        "give answer", "give solution", "show answer", "show the answer", "show solution",
+        "show the solution", "show model answer", "give model answer", "what is the answer",
+        "what's the answer", "whats the answer", "what is the solution", "what's the solution",
+        "whats the solution", "tell me the answer", "tell me the solution", "tell answer",
+        "tell solution", "explain the answer", "explain the solution", "reveal answer",
+        "reveal the answer", "reveal answers", "reveal solution", "reveal the solution",
+        "i don't know the answer", "dont know the answer", "i don't know", "dont know",
+        "i give up", "give up", "can't solve", "cant solve", "could not solve",
+        "how to solve this", "solve it for me", "solve it", "solve this", "share the answer",
+        "share the solution", "correct answer", "what is correct answer", "solution please", "answer please"
+    ]
+    # If the user says "give me the answer", ensure it's not "give me questions and answers"
+    if any(p in text for p in solution_patterns) and not any(p in text for p in ["give me question", "give me questions", "want to practice", "practice question"]):
+        return "SOLUTION_REQUEST"
+
+    # 4. Check for explicit student submission prefixes
+    submission_prefixes = [
+        "my answer is", "my answer:", "here is my answer", "here's my answer",
+        "my attempt", "my solution", "attempt:", "solution:", "i think the answer is", "my points are"
+    ]
+    if any(text.startswith(p) for p in submission_prefixes):
+        return "STUDENT_SUBMISSION"
+
+    # MCQ submission pattern like "1-A, 2-B" or "1. A, 2. B" or "1-A"
+    if re.search(r'\b[1-9]\s*[-:.)]\s*[A-Da-d]\b', text):
+        return "STUDENT_SUBMISSION"
+
+    # 5. Check if previous turn was a Coach practice/answer-writing invitation and student is answering
+    if history and len(history) > 0:
+        last_turn = history[-1]
+        last_role = last_turn.get("role", "")
+        last_text = (last_turn.get("text") or last_turn.get("content") or "").lower()
+        if last_role in ["assistant", "coach", "bot"]:
+            practice_invitations = [
+                "your turn:", "draft your answer", "give it a shot", "your choices",
+                "submit your", "drop your thoughts", "take about 8", "take about 10",
+                "recommended time:", "weightage:"
+            ]
+            if any(pi in last_text for pi in practice_invitations):
+                if not any(k in text for k in ["give me question", "another question", "new question", "practice", "give me the answer", "show solution", "hint"]):
+                    if len(text.split()) >= 4:
+                        return "STUDENT_SUBMISSION"
+
+    # 6. Check for Answer-Writing Practice Request
+    answer_writing_keywords = [
+        "answer writing", "answer-writing", "answerwrite", "practice writing",
+        "writing practice", "question for answer writing", "questions for answer writing",
+        "give me a descriptive question", "give me descriptive question", "give descriptive question",
+        "give me a case study question", "give me case study question", "give case study question",
+        "case study to practice", "case study for practice", "descriptive question to practice",
+        "descriptive question for practice", "case scenario question", "subjective question",
+        "descriptive answer writing"
+    ]
+    if any(k in text for k in answer_writing_keywords):
+        return "ANSWER_WRITING"
+
+    # 7. Check for Topic / Subject Practice Request
+    practice_keywords = [
+        "i want to practice", "want to practice", "let's practice", "lets practice",
+        "give me questions", "give me question", "give me some questions", "give questions",
+        "give some questions", "ask me a question", "ask me questions", "ask questions",
+        "quiz me", "test me", "test my knowledge", "take a test", "practice questions",
+        "practice question", "practice problem", "practice problems", "questions to solve",
+        "question to solve", "problems to solve", "problem to solve", "give me mcq",
+        "give me mcqs", "give mcq", "give mcqs", "quiz on", "questions from",
+        "questions on", "give questions on", "can you give me questions", "numerical to practice",
+        "practice session"
+    ]
+    wants_answers_together = any(w in text for w in ["with answer", "with solution", "and answers", "and solutions", "along with answer"])
+    if any(k in text for k in practice_keywords) and not wants_answers_together:
+        return "PRACTICE"
+
+    # 8. General Conversation / Greeting / Motivation
+    greetings = ["hi", "hello", "hey", "namaste", "good morning", "good evening", "good afternoon"]
+    if text in greetings or text.startswith("hi coach") or text.startswith("hello coach") or text.startswith("hey coach"):
+        return "GENERAL_CONVERSATION"
+
+    conversational_phrases = [
+        "feeling stressed", "feeling anxious", "feeling nervous", "exam stress",
+        "study tips", "how to study", "how to prepare", "study strategy", "study plan",
+        "thank you", "thanks", "how are you", "who are you"
+    ]
+    if any(cp in text for cp in conversational_phrases):
+        return "GENERAL_CONVERSATION"
+
+    # 9. Default to Concept / Exam Doubt Resolution
+    return "CONCEPT_DOUBT"
+
+
 CANDIDATE_MODELS = [
     "gemini-flash-lite-latest",
     "gemini-flash-latest",
@@ -284,6 +403,7 @@ class AIService:
     ) -> Dict[str, Any]:
         """
         Level-aware answer generation with Grounded -> NOT_IN_MATERIAL -> General Knowledge fallback.
+        Supports Practice Drills, Answer-Writing Practice, Solution Requests, Submissions, and Doubts.
         Returns dict: {"reply": str, "source": "material" | "general", "top_score": float, "model_used": str}.
         """
         if not self.has_api_key():
@@ -302,9 +422,6 @@ class AIService:
                     history_text += f"{role_label}: {msg_body}\n"
             history_text += "\n"
 
-        level_context = f"""STUDENT LEVEL: The student is preparing for {course} {level}. Answer strictly within this level's syllabus, depth and exam pattern. Do not use concepts from higher levels unless asked.
-COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a clarifying question and never end with an offer to continue. If the question is ambiguous, state one assumption in a line and answer fully. For numericals show the full solution with working notes from start to final answer."""
-
         images = []
         if image_base64:
             images.append({
@@ -313,6 +430,86 @@ COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a cla
             })
 
         user_query = message.strip() if message else "Please evaluate this student submission."
+
+        # Detect interaction scenario
+        scenario = detect_interaction_scenario(user_query, history=history, has_image=bool(image_base64))
+
+        level_prefix = f"STUDENT LEVEL: The student is preparing for {course} {level}. Answer strictly within this level's syllabus, depth and exam pattern. Do not use concepts from higher levels unless asked."
+
+        if scenario == "ANSWER_WRITING":
+            scenario_instructions = f"""{level_prefix}
+CURRENT SCENARIO: ANSWER-WRITING PRACTICE REQUEST
+1. The student wants an authentic exam question to practice descriptive or case-study answer writing for {course} {level}.
+2. Provide ONE realistic, exam-standard case scenario or descriptive question (typically 4-6 marks) matching the requested topic/subject.
+3. State the marks weightage and recommended time limit (e.g. **Weightage: 5 Marks | Recommended Time: 8-10 Minutes**).
+4. STRICTLY DO NOT PROVIDE THE ANSWER, HINTS, OR MODEL SOLUTION IN THIS INITIAL RESPONSE. Withhold the answer completely so the student can draft their own answer first!
+5. CONVERSATIONAL TONE & FOLLOW-UP (TALK LIKE A FRIEND):
+   Talk warmly, naturally, and encouragingly like a senior mentor-friend.
+   Conclude by warmly inviting them to attempt it:
+   "👉 **Your Turn:** Take about 8-10 minutes to draft your answer! Outline your statutory provisions, analysis, and conclusion right here (or snap a photo of your handwritten sheet). Once you share it, I'll review it with step-wise marks and feedback. Or if you want to skip straight to the model answer, just let me know and I'll walk you through it!"
+"""
+        elif scenario == "PRACTICE":
+            scenario_instructions = f"""{level_prefix}
+CURRENT SCENARIO: TOPIC / SUBJECT PRACTICE REQUEST
+1. The student wants questions to practice or test their knowledge.
+2. If a specific topic/subject is provided: provide 1 to 3 exam-level question(s) (or practical numerical / MCQs) matching {course} {level}.
+   If NO specific topic is provided (e.g. student just said "I want to practice"): ask them warmly what subject or topic from {course} {level} they'd like to crush today (e.g. Law, Costing, Tax, Audit, Accounts) and whether they want answer-writing, numerical practice, or MCQs.
+3. For questions provided: clearly state the marks weightage for each question.
+4. STRICTLY DO NOT REVEAL THE ANSWERS, WORKING NOTES, OR SOLUTIONS IN THIS INITIAL RESPONSE. Give the student the opportunity to attempt them!
+5. CONVERSATIONAL TONE & FOLLOW-UP (TALK LIKE A FRIEND):
+   Talk warmly and naturally like a senior friend and coach.
+   Conclude by inviting them to try it out:
+   "Give it a shot! Drop your thoughts, steps, or final figures right here and I'll check your work. Or if you get stuck and want hints or want me to reveal the full solution with working notes, just say the word!"
+"""
+        elif scenario == "HINT_REQUEST":
+            scenario_instructions = f"""{level_prefix}
+CURRENT SCENARIO: HINT REQUEST
+1. The student is asking for a hint or clue for the practice question under discussion.
+2. Provide a helpful, encouraging clue or thought-starter (e.g. pointing towards the key section number, standard formula, or threshold to consider).
+3. DO NOT reveal the final answer, complete calculation, or entire conclusion. Give them just enough guidance to think and attempt.
+4. Conclude warmly: "Give that a thought and try taking the next step! What do you get?"
+"""
+        elif scenario == "SOLUTION_REQUEST":
+            scenario_instructions = f"""{level_prefix}
+CURRENT SCENARIO: STUDENT ASKS FOR THE ANSWER / SOLUTION
+1. The student is specifically asking for the solution, model answer, or working notes for the question discussed.
+2. Provide the complete, comprehensive, and definitive model solution in ONE response.
+3. Structure it according to official exam standards:
+   • Statutory Provisions / Accounting Standards / SAs (with exact Section/Standard numbers and titles)
+   • Step-by-step Working Notes and Computations (for practical subjects, in clean math notation without raw LaTeX)
+   • Direct Analysis and Final Conclusion
+4. CONVERSATIONAL TONE (TALK LIKE A FRIEND):
+   Present the solution warmly and supportively, pointing out how ICAI expects it presented to bag full marks.
+"""
+        elif scenario == "STUDENT_SUBMISSION":
+            scenario_instructions = f"""{level_prefix}
+CURRENT SCENARIO: STUDENT ANSWER EVALUATION
+1. The student has submitted their written answer, attempt, or answer sheet.
+2. Evaluate their attempt warmly, constructively, and thoroughly like an encouraging senior mentor-friend.
+3. Provide:
+   • A Score out of total marks (e.g. 7.5 / 10).
+   • Step-Wise Marks Breakdown (Provisions, Application & Working, Conclusion & Presentation).
+   • Strengths (what they wrote accurately).
+   • Where marks were lost (missing sections, presentation gaps, calculation errors).
+   • The Suggested Model Answer in full exam format.
+4. Keep the tone inspiring, friendly, and practical.
+"""
+        elif scenario == "GENERAL_CONVERSATION":
+            scenario_instructions = f"""{level_prefix}
+CURRENT SCENARIO: FRIENDLY CONVERSATION & STUDY MENTORSHIP
+Talk naturally, warmly, and empathetically like a trusted friend and senior mentor.
+Never sound like a stiff robot or use canned corporate templates. Be encouraging and provide practical, actionable study guidance.
+"""
+        else: # CONCEPT_DOUBT
+            scenario_instructions = f"""{level_prefix}
+COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a clarifying question and never end with an offer to continue. If the question is ambiguous, state one assumption in a line and answer fully. For numericals show the full solution with working notes from start to final answer.
+CURRENT SCENARIO: CONCEPT / EXAM DOUBT RESOLUTION
+Explain the concept or provide the complete solution in ONE comprehensive response.
+For law/audit: State Statutory Provisions, Analysis & Application, and Conclusion.
+For practical/numerical: Show the full solution with step-by-step Working Notes from start to final answer in clean commerce math notation (no raw LaTeX).
+Talk warmly and clearly like a friendly mentor who makes tough topics easy to master.
+"""
+
         # Check if user explicitly forces internet / external research
         forced_internet = is_forced_internet_query(user_query)
 
@@ -330,7 +527,7 @@ COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a cla
                 web_excerpts = "\n\n".join([f"[{i+1}] {r['title']}:\n{r['snippet']}" for i, r in enumerate(web_results)])
                 internet_system = f"""{SYSTEM_PROMPT}
 
-{level_context}
+{scenario_instructions}
 
 INTERNET RESEARCH RULES:
 - The student query specifically requested online research or recent external updates.
@@ -364,9 +561,22 @@ Student Query:
         if context_chunks and len(context_chunks) > 0:
             excerpts_text = "\n\n".join([f"--- Excerpt {idx+1} ({c.get('section', '')}) ---\n{c.get('content', '')}" for idx, c in enumerate(context_chunks)])
 
-            grounded_system = f"""{SYSTEM_PROMPT}
+            if scenario in ["ANSWER_WRITING", "PRACTICE"]:
+                grounded_system = f"""{SYSTEM_PROMPT}
 
-{level_context}
+{scenario_instructions}
+
+GROUNDED RULES (PRACTICE / QUESTION GENERATION):
+- Use the excerpts provided below to formulate authentic exam questions based on the uploaded institute material.
+- If the excerpts do not contain relevant topic content to formulate questions, output exactly NOT_IN_MATERIAL.
+- STRICTLY DO NOT REVEAL THE ANSWERS, SOLUTIONS, OR WORKING NOTES IN THIS INITIAL TURN.
+- Follow up warmly and naturally like a friend, asking if the student wants to attempt it or wants hints/model answers.
+- Never mention files, excerpts, retrieval, or sources in your response. Speak naturally as a friend and mentor.
+"""
+            else:
+                grounded_system = f"""{SYSTEM_PROMPT}
+
+{scenario_instructions}
 
 GROUNDED RULES:
 - Use ONLY the excerpts provided below. Do not add sections, rates, limits or figures not in them.
@@ -404,9 +614,22 @@ Student Query:
                 print(f"[Grounded call notice]: {e}. Proceeding to general knowledge fallback.")
 
         # STEP 2: General Knowledge Fallback
-        general_system = f"""{SYSTEM_PROMPT}
+        if scenario in ["ANSWER_WRITING", "PRACTICE"]:
+            general_system = f"""{SYSTEM_PROMPT}
 
-{level_context}
+{scenario_instructions}
+
+GENERAL KNOWLEDGE RULES (PRACTICE / QUESTION GENERATION):
+- Formulate authentic, exam-standard questions for {course} {level} based on standard syllabus requirements.
+- STRICTLY DO NOT REVEAL THE ANSWERS, SOLUTIONS, OR WORKING NOTES IN THIS INITIAL TURN.
+- Follow up warmly and naturally like a friend, asking if the student wants to attempt it or wants hints/model answers.
+- Do NOT print any disclaimer or source text in the student-facing answer (never say 'Based on general knowledge' or 'From the study material').
+- Never mention files, excerpts, retrieval, or sources in your response. Speak naturally as a friend and mentor.
+"""
+        else:
+            general_system = f"""{SYSTEM_PROMPT}
+
+{scenario_instructions}
 
 GENERAL KNOWLEDGE RULES:
 - Answer the student's doubt thoroughly, authoritatively, and completely in ONE response using standard {course} {level} statutory provisions and exam concepts.
