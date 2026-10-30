@@ -397,6 +397,9 @@ async def run_preset(preset: Dict[str, Any], download_only: bool = False):
                 catalog.insert(0, res)
                 save_catalog(catalog)
                 update_progress_markdown(catalog)
+                if success_count % 10 == 0:
+                    print(f'[*] Checkpoint reached: {success_count} chapters indexed. Syncing progress...')
+                    push_git_progress()
             else:
                 print(f"      -> {res.get('status')}")
         except QuotaExhaustedError:

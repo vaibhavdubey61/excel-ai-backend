@@ -54,6 +54,7 @@ class CloudVectorStore:
         self.keys = deduped
         self.key_index = 0
         self.active_key = self.keys[0] if self.keys else gemini_api_key
+        self.exhausted_keys = set()
         self.pinecone_api_key = pinecone_api_key
         self.index_host = index_host.rstrip('/')
 
@@ -61,13 +62,22 @@ class CloudVectorStore:
         """Returns True if required API keys and index host are configured."""
         return bool(self.active_key and self.pinecone_api_key and self.index_host)
 
-    def switch_to_next_key(self) -> bool:
+    def switch_to_next_key(self, mark_daily: bool = False) -> bool:
         """Rotates to next available key in pool if current key exhausted or invalid."""
-        if self.key_index + 1 < len(self.keys):
-            self.key_index += 1
-            self.active_key = self.keys[self.key_index]
-            print(f"[CloudVectorStore]: Switched to Key #{self.key_index + 1} ({self.active_key[:14]}...)...")
-            return True
+        if not self.keys:
+            return False
+        if mark_daily:
+            self.exhausted_keys.add(self.key_index)
+            print(f"[CloudVectorStore]: Marked Key #{self.key_index + 1} as daily exhausted. {len(self.keys) - len(self.exhausted_keys)} unexhausted keys remaining.")
+        
+        # Look for next key that is not in exhausted_keys
+        for offset in range(1, len(self.keys) + 1):
+            cand_idx = (self.key_index + offset) % len(self.keys)
+            if cand_idx not in self.exhausted_keys:
+                self.key_index = cand_idx
+                self.active_key = self.keys[self.key_index]
+                print(f"[CloudVectorStore]: Switched to Key #{self.key_index + 1} ({self.active_key[:14]}...)...")
+                return True
         return False
 
     switch_to_secondary_key = switch_to_next_key
@@ -90,16 +100,20 @@ class CloudVectorStore:
                     return resp.json()["embedding"]["values"]
                 elif resp.status_code == 401:
                     print(f"[CloudVectorStore]: Key {self.active_key[:12]}... returned 401. Switching key...")
-                    if self.switch_to_next_key():
+                    if self.switch_to_next_key(mark_daily=True):
                         continue
                     raise Exception("All configured Gemini API keys returned 401 Invalid.")
                 elif resp.status_code == 429:
                     is_daily = "per day limit exceeded" in resp.text.lower() or "requestsperday" in resp.text.lower()
                     if is_daily:
-                        if self.switch_to_next_key():
+                        if self.switch_to_next_key(mark_daily=True):
                             continue
                         raise QuotaExhaustedError("Daily embedding quota reached across all API keys.")
-                    # Short-term minute limit
+                    # Short-term minute limit: try next unexhausted key first
+                    if len(self.keys) - len(self.exhausted_keys) > 1:
+                        if self.switch_to_next_key(mark_daily=False):
+                            await asyncio.sleep(1.0)
+                            continue
                     print(f"[get_embedding 429]: Pausing 15s for minute window...")
                     await asyncio.sleep(15)
                 else:
@@ -147,17 +161,23 @@ class CloudVectorStore:
                                 break
                         elif resp.status_code == 401:
                             print(f"[embed_batch]: Key {self.active_key[:12]}... returned 401. Switching key...")
-                            if self.switch_to_next_key():
+                            if self.switch_to_next_key(mark_daily=True):
                                 continue
                             raise Exception("All configured Gemini API keys returned 401 Invalid.")
                         elif resp.status_code == 429:
                             is_daily = "per day limit exceeded" in resp.text.lower() or "requestsperday" in resp.text.lower()
                             if is_daily:
-                                if self.switch_to_next_key():
+                                if self.switch_to_next_key(mark_daily=True):
                                     print(f"[embed_batch]: Key daily quota reached. Retrying with Key #{self.key_index + 1}...")
                                     continue
                                 else:
                                     raise QuotaExhaustedError("Daily embedding quota reached across all API keys.")
+
+                            # Per-minute rate limit: try next key immediately if available!
+                            if len(self.keys) - len(self.exhausted_keys) > 1:
+                                if self.switch_to_next_key(mark_daily=False):
+                                    await asyncio.sleep(1.0)
+                                    continue
 
                             # Per-minute rate limit: parse retry delay or sleep 20s
                             wait_sec = 20
