@@ -444,24 +444,33 @@ async function sendMessage() {
     autoResize(input);
     clearAttachment();
 
-    // 2. Render Loading State
+    // 2. Render Loading State (Confined Box Style)
     const loadingId = "loader-" + Date.now();
     const loadingDiv = document.createElement("div");
     loadingDiv.id = loadingId;
-    loadingDiv.className = "flex gap-3 items-start max-w-2xl";
+    loadingDiv.className = "w-full";
     loadingDiv.innerHTML = `
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-900 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-md">
-            E
-        </div>
-        <div class="bg-[#2a2a2a] border border-[#383838] rounded-2xl rounded-tl-sm px-4 py-3 shadow-md flex items-center gap-2 text-xs font-medium text-neutral-400">
-            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" style="animation-delay: 0.2s"></span>
-            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" style="animation-delay: 0.4s"></span>
-            <span class="ml-1 text-neutral-300">Excel AI is thinking...</span>
+        <div class="assistant-card w-full bg-[#262626] border border-[#383838] rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-[#333333]">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-6 h-6 rounded-lg bg-[#303030] border border-[#444444] flex items-center justify-center text-amber-400 shadow-sm flex-shrink-0">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 animate-spin"></i>
+                    </div>
+                    <span class="text-xs font-semibold text-neutral-200 tracking-tight">Excel AI</span>
+                </div>
+                <span class="text-[11px] text-neutral-400">Thinking...</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs text-neutral-400 py-1">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" style="animation-delay: 0.2s"></span>
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" style="animation-delay: 0.4s"></span>
+                <span class="ml-1.5 text-neutral-300 font-medium">Formulating clear response...</span>
+            </div>
         </div>
     `;
     container.appendChild(loadingDiv);
     scrollChatToBottom();
+    lucide.createIcons();
 
     // 3. Make API Call
     const formData = new FormData();
@@ -530,19 +539,19 @@ async function sendMessage() {
 function appendUserBubble(text, imageUrl, scroll) {
     const container = document.getElementById("messages-container");
     const userDiv = document.createElement("div");
-    userDiv.className = "flex justify-end";
+    userDiv.className = "flex justify-end w-full";
 
     let imgHtml = "";
     if (imageUrl) {
         imgHtml = `
-            <div class="mb-2">
+            <div class="mb-2.5">
                 <img src="${imageUrl}" class="max-h-56 rounded-xl border border-neutral-700 shadow-md" alt="upload">
             </div>
         `;
     }
 
     userDiv.innerHTML = `
-        <div class="bg-[#2f2f2f] text-neutral-100 rounded-3xl rounded-tr-sm px-4 py-3 max-w-xl text-sm leading-relaxed shadow-md border border-[#3d3d3d]">
+        <div class="bg-[#2f2f2f] text-neutral-100 rounded-2xl px-5 py-3.5 max-w-xl text-[14.5px] leading-relaxed shadow-sm border border-[#3d3d3d]">
             ${imgHtml}
             ${text ? `<p class="whitespace-pre-wrap">${escapeHtml(text)}</p>` : ''}
         </div>
@@ -606,47 +615,49 @@ function cleanExamMarkdown(text) {
 function appendAssistantBubble(markdownText, scroll) {
     const container = document.getElementById("messages-container");
     const aiDiv = document.createElement("div");
-    aiDiv.className = "flex gap-3 items-start";
+    aiDiv.className = "w-full";
 
     // Clean broken LaTeX and format nicely
     const cleanedText = cleanExamMarkdown(markdownText);
-    const renderedHtml = marked.parse(cleanedText);
+    let renderedHtml = marked.parse(cleanedText);
 
-    // Check if response mentions MCQs to offer interactive test card
-    const isMcqRelated = /(mcq|multiple choice|quiz|practice question)/i.test(cleanedText);
-    const mcqPillHtml = isMcqRelated ? `
-        <div class="pt-2 pb-1">
-            <div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div class="flex items-center gap-2.5">
-                    <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">
-                        <i data-lucide="award" class="w-4 h-4"></i>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-white">Interactive 10-Question Exam Mode</p>
-                        <p class="text-[11px] text-neutral-400">Test yourself with hidden answers, stopwatch timer, and live scoring</p>
-                    </div>
-                </div>
-                <button onclick="openMcqModal()" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 flex-shrink-0">
-                    <i data-lucide="play" class="w-3.5 h-3.5 fill-slate-950"></i>
-                    <span>Start 10-MCQ Test</span>
-                </button>
-            </div>
-        </div>
-    ` : "";
+    // Responsive container for financial & calculation tables
+    renderedHtml = renderedHtml
+        .replace(/<table>/g, '<div class="table-container overflow-x-auto my-3 rounded-xl border border-[#383838]"><table class="w-full text-left">')
+        .replace(/<\/table>/g, '</table></div>');
 
     aiDiv.innerHTML = `
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-900 font-black text-xs flex items-center justify-center flex-shrink-0 shadow-md mt-1">
-            E
-        </div>
-        <div class="flex-1 bg-[#282828] border border-[#383838] rounded-3xl rounded-tl-sm p-5 shadow-lg space-y-3">
+        <div class="assistant-card w-full bg-[#262626] border border-[#383838] hover:border-[#484848] rounded-2xl p-5 md:p-6 shadow-sm space-y-4 transition-colors duration-200">
+            <!-- Box Header -->
+            <div class="flex items-center justify-between pb-3 border-b border-[#333333]">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-6 h-6 rounded-lg bg-[#303030] border border-[#444444] flex items-center justify-center text-amber-400 shadow-sm flex-shrink-0">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                    </div>
+                    <span class="text-xs font-semibold text-neutral-200 tracking-tight">Excel AI</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button onclick="readAloud(this)" data-text="${escapeQuotes(cleanedText)}" title="Read Aloud" class="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-[#323232] transition">
+                        <i data-lucide="volume-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(cleanedText)}" title="Copy Answer" class="px-2.5 py-1 rounded-lg text-neutral-400 hover:text-white hover:bg-[#323232] transition flex items-center gap-1.5 text-xs font-medium">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        <span>Copy</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Area -->
             <div class="markdown-body">
                 ${renderedHtml}
             </div>
-            ${mcqPillHtml}
-            <div class="pt-2 border-t border-[#333333] flex items-center justify-end text-xs text-neutral-400">
-                <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(cleanedText)}" title="Copy response" class="p-1 hover:text-white transition flex items-center gap-1 text-[11px] font-medium">
-                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                    <span>Copy</span>
+
+            <!-- Box Bottom Actions -->
+            <div class="flex items-center justify-between pt-3 border-t border-[#333333] text-xs text-neutral-400">
+                <span class="text-[11px] text-neutral-400">Excel AI Response</span>
+                <button onclick="copyToClipboard(this)" data-content="${escapeQuotes(cleanedText)}" class="hover:text-white transition flex items-center gap-1.5 text-[11px] font-medium text-neutral-400 hover:text-neutral-200">
+                    <i data-lucide="copy" class="w-3 h-3"></i>
+                    <span>Copy response</span>
                 </button>
             </div>
         </div>
@@ -1409,7 +1420,7 @@ function renderResultsBreakdown() {
                     ${optionsHtml}
                 </div>
 
-                <!-- Brief ICAI-Style Reasoning Box -->
+                <!-- Detailed Solution & Working Notes Box -->
                 <div class="mt-3 p-3.5 sm:p-4 rounded-xl bg-[#142314] border border-emerald-500/40 text-emerald-100 text-xs sm:text-sm space-y-1.5 mcq-review-item shadow-inner">
                     <p class="font-bold flex items-center gap-1.5 text-emerald-300 text-xs uppercase tracking-wide">
                         <i data-lucide="lightbulb" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
