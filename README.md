@@ -2,9 +2,9 @@
 **Excel Educational Institute | Intelligent Exam Coach for CA, CS, and CMA Students**
 
 [![Cloud Backend](https://img.shields.io/badge/Render-Live_Cloud_Backend-46E3B7?style=flat-square&logo=render)](https://excel-ai-backend-yegx.onrender.com)
-[![Vector DB](https://img.shields.io/badge/Pinecone-11%2C748_Cloud_Vectors-000000?style=flat-square&logo=pinecone)](https://pinecone.io)
+[![Vector DB](https://img.shields.io/badge/Pinecone-15%2C834_Cloud_Vectors-000000?style=flat-square&logo=pinecone)](https://pinecone.io)
 [![CA Inter](https://img.shields.io/badge/CA_Inter-100%25_Indexed_(92%2F92_Ch)-success?style=flat-square)](https://boslive.icai.org)
-[![CA Final](https://img.shields.io/badge/CA_Final-Financial_Reporting_Indexed-blue?style=flat-square)](https://boslive.icai.org)
+[![CA Final](https://img.shields.io/badge/CA_Final-65_Chapters_Indexed-blue?style=flat-square)](https://boslive.icai.org)
 [![AI Engine](https://img.shields.io/badge/Google_Gemini-Multi--Model_Failover-4285F4?style=flat-square&logo=google)](https://ai.google.dev/)
 [![Lecture Video AI](https://img.shields.io/badge/Lecture_Videos-Zero--Timestamp_Summary-rose?style=flat-square)](https://youtube.com)
 
@@ -43,7 +43,7 @@ python -m uvicorn app:app --port 8000
 * **Study Material & Admin Insights:** [http://localhost:8000/admin](http://localhost:8000/admin)
 
 ### 4. ICAI Study Material Ingestion Status & Resuming
-* **Ingestion Milestone Reached:** 142+ Documents Indexed | 7,293+ Pages Processed | **11,748 Cloud Vectors** in Pinecone (`excel-ai-materials`).
+* **Ingestion Milestone Reached:** 187 Documents Indexed | 9,626 Pages Processed | **15,834 Cloud Vectors** in Pinecone (`excel-ai-materials`).
 * **CA Intermediate (English — May 2026):** **100% COMPLETE (92/92 Chapters)** across all 6 papers:
   - Paper 1 (Advanced Accounting): 10/10 ✅
   - Paper 2 (Corporate & Other Laws): 15/15 ✅
@@ -105,7 +105,7 @@ copy .env.example .env
 ### 🧪 Office PC Verification Commands
 Verify that your office PC environment passes all 6 phases:
 ```cmd
-# 1. Run all 31 automated unit & integration tests
+# 1. Run all 39 automated unit & integration tests
 python -m unittest discover tests
 
 # 2. Run exam evaluation suite (10 standard CA exam questions across levels)
@@ -229,7 +229,7 @@ The codebase includes full unit and integration test suites covering all 6 phase
 ```bash
 python -m unittest discover tests
 ```
-Runs 31 automated tests across:
+Runs 39 automated tests across:
 * **Phase 1:** Chunk size limits, SQLite database migrations, Gemini API failover & error handling, admin key authentication, rate limiting.
 * **Phase 2:** Syllabus hierarchy, namespace resolution, chunk context tagging, OCR detection, asynchronous ingestion jobs.
 * **Phase 3:** Student onboarding, 6-turn history management, follow-up query rewriting, image extraction, grounded vs general fallback.
