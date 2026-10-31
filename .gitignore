@@ -2,11 +2,13 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+desktop.ini
+Thumbs.db
+~$*
 *.log
 node_modules/
 excel-ai-mobile/node_modules/
 excel-ai-mobile/.expo/
-study_materials/
 data/*.db
 *.exe
 *.apk
