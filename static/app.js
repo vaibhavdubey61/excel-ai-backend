@@ -496,37 +496,96 @@ async function sendMessage() {
             method: "POST",
             body: formData
         });
-        let data = {};
-        try {
-            data = await resp.json();
-        } catch (jsonErr) {
-            console.warn("Non-JSON server response:", jsonErr);
-        }
 
-        // Remove loading state
-        const loader = document.getElementById(loadingId);
-        if (loader) loader.remove();
+        const contentType = resp.headers.get("content-type") || "";
+        let replyMarkdown = "";
 
-        let replyMarkdown = data.reply || data.detail;
-        if (!replyMarkdown) {
-            if (resp.status === 503) {
-                replyMarkdown = "The AI is busy summarizing the lecture or analyzing materials. Please try again in a moment.";
-            } else if (resp.status >= 500) {
-                replyMarkdown = "⚠️ The Excel AI server encountered a temporary delay. Please re-send your question or try again.";
-            } else {
-                replyMarkdown = "I could not generate an answer right now. Please try again.";
+        if (contentType.includes("text/event-stream") && resp.body) {
+            const loader = document.getElementById(loadingId);
+            const statusTextEl = loader ? loader.querySelector("span") : null;
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let aiBubble = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split("\n\n");
+                buffer = parts.pop();
+
+                for (const part of parts) {
+                    const line = part.trim();
+                    if (!line.startsWith("data: ")) continue;
+                    try {
+                        const payload = JSON.parse(line.slice(6));
+                        if (payload.event === "status") {
+                            if (statusTextEl && payload.message) {
+                                statusTextEl.textContent = payload.message;
+                            }
+                        } else if (payload.token) {
+                            if (!aiBubble) {
+                                if (loader) loader.remove();
+                                aiBubble = appendAssistantBubble("", true);
+                            }
+                            replyMarkdown += payload.token;
+                            updateAssistantBubble(aiBubble, replyMarkdown, false);
+                        } else if (payload.event === "done" && payload.reply) {
+                            replyMarkdown = payload.reply;
+                            if (!aiBubble) {
+                                if (loader) loader.remove();
+                                aiBubble = appendAssistantBubble(replyMarkdown, true);
+                            } else {
+                                updateAssistantBubble(aiBubble, replyMarkdown, true);
+                            }
+                        } else if (payload.error) {
+                            replyMarkdown = payload.error;
+                        }
+                    } catch (pErr) {}
+                }
             }
-        }
 
-        // 4. Render Assistant Bubble
-        appendAssistantBubble(replyMarkdown, true);
+            if (loader) loader.remove();
+            if (!aiBubble && replyMarkdown) {
+                aiBubble = appendAssistantBubble(replyMarkdown, true);
+            }
+            if (aiBubble) {
+                updateAssistantBubble(aiBubble, replyMarkdown, true);
+            }
+        } else {
+            let data = {};
+            try {
+                data = await resp.json();
+            } catch (jsonErr) {
+                console.warn("Non-JSON server response:", jsonErr);
+            }
+
+            const loader = document.getElementById(loadingId);
+            if (loader) loader.remove();
+
+            replyMarkdown = data.reply || data.detail;
+            if (!replyMarkdown) {
+                if (resp.status === 503) {
+                    replyMarkdown = "The AI is busy summarizing the lecture or analyzing materials. Please try again in a moment.";
+                } else if (resp.status >= 500) {
+                    replyMarkdown = "⚠️ The Excel AI server encountered a temporary delay. Please re-send your question or try again.";
+                } else {
+                    replyMarkdown = "I could not generate an answer right now. Please try again.";
+                }
+            }
+            appendAssistantBubble(replyMarkdown, true);
+        }
 
         // Save assistant message to session
-        session.messages.push({
-            role: "assistant",
-            content: replyMarkdown
-        });
-        saveSessionsToStorage();
+        if (replyMarkdown) {
+            session.messages.push({
+                role: "assistant",
+                content: replyMarkdown
+            });
+            saveSessionsToStorage();
+        }
 
     } catch (err) {
         console.error("Chat communication error:", err);
@@ -612,19 +671,53 @@ function cleanExamMarkdown(text) {
     return cleaned.trim();
 }
 
+function formatAssistantMarkdown(markdownText) {
+    if (!markdownText) return { cleanedText: "", renderedHtml: "" };
+    const cleanedText = cleanExamMarkdown(markdownText);
+    let renderedHtml = "";
+    try {
+        renderedHtml = marked.parse(cleanedText);
+    } catch (e) {
+        renderedHtml = escapeHtml(cleanedText);
+    }
+    renderedHtml = renderedHtml
+        .replace(/<table>/g, '<div class="table-container overflow-x-auto my-3 rounded-xl border border-[#383838]"><table class="w-full text-left">')
+        .replace(/<\/table>/g, '</table></div>');
+    return { cleanedText, renderedHtml };
+}
+
+function updateAssistantBubble(aiDiv, markdownText, finalize = false) {
+    if (!aiDiv) return;
+    const { cleanedText, renderedHtml } = formatAssistantMarkdown(markdownText);
+    const bodyEl = aiDiv.querySelector(".markdown-body");
+    if (bodyEl) {
+        bodyEl.innerHTML = renderedHtml;
+    }
+    if (finalize) {
+        aiDiv.querySelectorAll("[data-text]").forEach(el => el.setAttribute("data-text", escapeQuotes(cleanedText)));
+        aiDiv.querySelectorAll("[data-content]").forEach(el => el.setAttribute("data-content", escapeQuotes(cleanedText)));
+        if (window.renderMathInElement) {
+            try {
+                renderMathInElement(aiDiv, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false
+                });
+            } catch (e) {}
+        }
+        if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+    scrollChatToBottom();
+}
+
 function appendAssistantBubble(markdownText, scroll) {
     const container = document.getElementById("messages-container");
     const aiDiv = document.createElement("div");
     aiDiv.className = "w-full";
 
-    // Clean broken LaTeX and format nicely
-    const cleanedText = cleanExamMarkdown(markdownText);
-    let renderedHtml = marked.parse(cleanedText);
-
-    // Responsive container for financial & calculation tables
-    renderedHtml = renderedHtml
-        .replace(/<table>/g, '<div class="table-container overflow-x-auto my-3 rounded-xl border border-[#383838]"><table class="w-full text-left">')
-        .replace(/<\/table>/g, '</table></div>');
+    const { cleanedText, renderedHtml } = formatAssistantMarkdown(markdownText);
 
     aiDiv.innerHTML = `
         <div class="assistant-card w-full bg-[#262626] border border-[#383838] hover:border-[#484848] rounded-2xl p-5 md:p-6 shadow-sm space-y-4 transition-colors duration-200">
@@ -681,6 +774,7 @@ function appendAssistantBubble(markdownText, scroll) {
 
     lucide.createIcons();
     if (scroll) scrollChatToBottom();
+    return aiDiv;
 }
 
 function scrollChatToBottom() {

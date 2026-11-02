@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import os
 import re
 import json
@@ -13,7 +14,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 import pypdf
 
@@ -22,6 +23,7 @@ from ai_service import AIService, clean_student_reply
 from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST
 from ingest_materials import detect_subject
 from reranker import get_reranker, CrossEncoderReranker
+from rate_limiter import rate_limiter, get_rate_limiter, InMemoryFallbackLimiter
 import db
 import syllabus
 import video_service
@@ -61,7 +63,20 @@ if os.path.exists(env_path):
 # Initialize database
 db.init_db()
 
-app = FastAPI(title="Excel AI Coach", version="2.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager: initializes distributed Redis rate limiter (fail-open) and handles graceful shutdown."""
+    try:
+        await rate_limiter.init()
+    except Exception as e:
+        print(f"[Lifespan Startup Critical]: Rate limiter initialization failed: {e}")
+    yield
+    try:
+        await rate_limiter.close()
+    except Exception as e:
+        print(f"[Lifespan Shutdown Notice]: Rate limiter close: {e}")
+
+app = FastAPI(title="Excel AI Coach", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,6 +84,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Anti-caching middleware: ensures users always receive latest frontend UI and scripts without stale browser caching
@@ -81,24 +97,9 @@ async def add_cache_control_headers(request, call_next):
         response.headers["Expires"] = "0"
     return response
 
-# Basic In-Memory Rate Limiter (30 req/min per IP)
-class InMemoryRateLimiter:
-    def __init__(self, requests_limit: int = 30, window_seconds: int = 60):
-        self.requests_limit = requests_limit
-        self.window_seconds = window_seconds
-        self.requests = defaultdict(list)
-
-    def is_allowed(self, client_ip: str) -> bool:
-        now = time.time()
-        timestamps = [ts for ts in self.requests[client_ip] if now - ts < self.window_seconds]
-        if len(timestamps) >= self.requests_limit:
-            self.requests[client_ip] = timestamps
-            return False
-        timestamps.append(now)
-        self.requests[client_ip] = timestamps
-        return True
-
-chat_limiter = InMemoryRateLimiter(requests_limit=30, window_seconds=60)
+# Backward-compatible references for rate limiting
+InMemoryRateLimiter = InMemoryFallbackLimiter
+chat_limiter = rate_limiter.fallback_limiter
 
 def verify_admin(request: Request):
     """Enforces simple admin authentication via X-Admin-Key header."""
@@ -153,12 +154,12 @@ async def chat_endpoint(
     course: Optional[str] = Form("CA"),
     level: Optional[str] = Form("Inter"),
     history: Optional[str] = Form("[]"),
-    session_id: Optional[str] = Form(None)
+    session_id: Optional[str] = Form(None),
+    stream: Optional[str] = Form(None)
 ):
-    """Unified endpoint: queries Pinecone Cloud Vector DB in student's namespace and generates level-aware answers via Gemini."""
-    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
-    if not chat_limiter.is_allowed(client_ip):
-        raise HTTPException(status_code=429, detail="Too many requests. Please slow down (limit: 30 requests/minute).")
+    """Unified endpoint: queries Pinecone Cloud Vector DB with Cross-Encoder reranking, supporting real-time SSE streaming."""
+    # Distributed Redis Rate Limiting (30 requests/minute per client IP or API key, fail-open)
+    await rate_limiter.check(request, limit=30, window_seconds=60)
 
     # Validate course and level against syllabus
     c_norm = syllabus.normalize_course(course or "CA")
@@ -194,10 +195,10 @@ async def chat_endpoint(
         raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
 
     # 0. Check for YouTube / Teaching Lecture Video link
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
     effective_session = session_id or client_ip
     youtube_id = video_service.extract_youtube_video_id(user_text)
 
-    # Check if student is asking to summarize a previously shared video in conversation history
     is_summary_request = any(p in user_text.lower() for p in ["summarize this", "summarize the video", "video summary", "lecture summary", "explain this video", "summarize"])
     if not youtube_id and is_summary_request:
         for msg in reversed(parsed_history):
@@ -218,7 +219,6 @@ async def chat_endpoint(
             )
             context_notes = transcript
         else:
-            # High-yield fallback: generate full academic lecture brief using verified metadata & ICAI standards
             summary_prompt = video_service.format_video_metadata_summary_prompt(
                 youtube_id, title=v_title, author=v_author, course=c_norm, level=l_norm, student_note=user_text
             )
@@ -271,12 +271,10 @@ async def chat_endpoint(
     # 1. Retrieval query building
     search_query = user_text
     if image_b64 and len(user_text.split()) < 4:
-        # Image-only submission: extract question text using fast Gemini call
         extracted_question = await ai.extract_question_from_image(image_b64, mime_type=mime_type)
         if extracted_question:
             search_query = f"{user_text} {extracted_question}".strip()
     elif parsed_history and len(user_text.split()) < 10:
-        # Follow-up questions (e.g. "what about its penalty?"): combine with last user turn
         last_user_turn = ""
         for item in reversed(parsed_history):
             if item.get("role") in ["user", "student"]:
@@ -285,7 +283,132 @@ async def chat_endpoint(
         if last_user_turn:
             search_query = f"{last_user_turn} {user_text}".strip()
 
-    # 2. Two-Stage RAG Pipeline: Stage 1 Candidate Retrieval (Top 20) + Stage 2 Cross-Encoder Reranking
+    # Determine whether client requested SSE streaming
+    user_agent = request.headers.get("user-agent", "").lower()
+    accept_hdr = request.headers.get("accept", "").lower()
+    is_curl = "curl" in user_agent
+    accepts_sse = "text/event-stream" in accept_hdr
+    explicit_stream = (stream or "").strip().lower() in ("true", "1", "yes") if stream is not None else None
+    explicit_no_stream = (stream or "").strip().lower() in ("false", "0", "no") if stream is not None else False
+    is_test_client = user_agent == "testclient"
+
+    is_streaming = (
+        (explicit_stream is True)
+        or accepts_sse
+        or is_curl
+        or (explicit_stream is None and not explicit_no_stream and not is_test_client and "application/json" not in accept_hdr)
+    )
+
+    if is_streaming:
+        async def chat_sse_stream():
+            start_t = time.time()
+            # Event 1: Immediate notification to the student
+            yield f"data: {json.dumps({'event': 'status', 'message': 'Searching knowledge base...'})}\n\n"
+
+            # 2. Two-Stage RAG Pipeline: Retrieval (Top 20) + Cross-Encoder Reranking
+            ns = syllabus.namespace(c_norm, l_norm)
+            candidate_chunks: List[Dict[str, Any]] = []
+            stream_chunks: List[Dict[str, Any]] = []
+            retrieval_ok = True
+
+            if search_query:
+                try:
+                    raw_chunks = await asyncio.wait_for(
+                        cloud_store.query(search_query, namespace=ns, top_k=20),
+                        timeout=6.0
+                    )
+                    candidate_chunks = list(raw_chunks)
+                except Exception as e:
+                    print(f"[Vector DB notice ({ns})]: {e}. Checking local knowledge fallback...")
+                    retrieval_ok = False
+
+                if not candidate_chunks:
+                    try:
+                        local_results = local_rag.search(search_query, top_k=20)
+                        for lr in local_results:
+                            if lr.get("relevance_score", 0.0) >= 0.12:
+                                candidate_chunks.append({
+                                    "doc_name": lr.get("doc_name", ""),
+                                    "section": lr.get("section", ""),
+                                    "content": lr.get("content", ""),
+                                    "score": lr.get("relevance_score", 0.0),
+                                    "subject": lr.get("subject", "")
+                                })
+                        if candidate_chunks:
+                            print(f"[Local RAG Fallback]: Found {len(candidate_chunks)} candidate excerpts for query.")
+                    except Exception as l_err:
+                        print(f"[Local RAG notice]: {l_err}")
+
+                if candidate_chunks:
+                    try:
+                        stream_chunks = await reranker.rerank(
+                            query=search_query,
+                            chunks=candidate_chunks,
+                            top_k=4,
+                            min_score=MIN_SCORE
+                        )
+                    except Exception as r_err:
+                        print(f"[Reranker Warning]: {r_err}")
+                        stream_chunks = [c for c in candidate_chunks if c.get("score", 0.0) >= MIN_SCORE][:4]
+
+            if stream_chunks:
+                yield f"data: {json.dumps({'event': 'status', 'message': f'Found {len(stream_chunks)} relevant excerpts. Formulating answer...'})}\n\n"
+
+            # 3. Stream tokens from LLM
+            collected_tokens = []
+            try:
+                async for token in ai.stream_response(
+                    message=user_text,
+                    image_base64=image_b64 if image_b64 else None,
+                    mime_type=mime_type,
+                    context_chunks=stream_chunks,
+                    course=c_norm,
+                    level=l_norm,
+                    history=parsed_history
+                ):
+                    collected_tokens.append(token)
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+            except Exception as stream_err:
+                print(f"[Streaming AI Error]: {stream_err}")
+                yield f"data: {json.dumps({'error': 'The AI is busy right now. Please try again in a moment.'})}\n\n"
+                return
+
+            full_reply = "".join(collected_tokens)
+            cleaned = clean_student_reply(full_reply)
+            top_score = max([c.get("score", 0.0) for c in stream_chunks], default=0.0)
+
+            # 4. Final completion event
+            yield f"data: {json.dumps({'event': 'done', 'reply': cleaned})}\n\n"
+
+            # 5. Background log interaction
+            try:
+                resp_time = round(time.time() - start_t, 3)
+                db.log_chat_interaction(
+                    timestamp=datetime.now().isoformat(),
+                    course=c_norm,
+                    level=l_norm,
+                    question=user_text or search_query,
+                    answer_preview=cleaned[:200],
+                    source="material" if stream_chunks else "general",
+                    top_score=top_score,
+                    retrieval_ok=retrieval_ok,
+                    model_used=ai.last_model_used,
+                    response_time_ms=int(resp_time * 1000)
+                )
+            except Exception as log_err:
+                print(f"[Chat Log Warning]: {log_err}")
+
+        return StreamingResponse(
+            chat_sse_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    # Non-streaming path (for TestClient, evaluation scripts, and admin workflows)
     ns = syllabus.namespace(c_norm, l_norm)
     candidate_chunks: List[Dict[str, Any]] = []
     chunks: List[Dict[str, Any]] = []
@@ -293,7 +416,6 @@ async def chat_endpoint(
     start_t = time.time()
 
     if search_query:
-        # Stage 1A: Search Pinecone Knowledge Base in student's namespace (fetch top 20 candidates)
         try:
             raw_chunks = await asyncio.wait_for(
                 cloud_store.query(search_query, namespace=ns, top_k=20),
@@ -304,7 +426,6 @@ async def chat_endpoint(
             print(f"[Vector DB notice ({ns})]: {e}. Checking local knowledge fallback...")
             retrieval_ok = False
 
-        # Stage 1B: Fallback to local RAG (TF-IDF) if cloud vector search is unavailable or returns 0 matches
         if not candidate_chunks:
             try:
                 local_results = local_rag.search(search_query, top_k=20)
@@ -322,8 +443,6 @@ async def chat_endpoint(
             except Exception as l_err:
                 print(f"[Local RAG notice]: {l_err}")
 
-        # Stage 2: Cross-Encoder Reranking (executed in thread pool via asyncio.to_thread)
-        # Re-scores candidate chunks, logs original vs reranked score, sorts, and applies MIN_SCORE filter
         if candidate_chunks:
             try:
                 chunks = await reranker.rerank(
@@ -336,7 +455,6 @@ async def chat_endpoint(
                 print(f"[Reranker Warning]: Cross-Encoder reranking error: {r_err}. Falling back to un-reranked top chunks.")
                 chunks = [c for c in candidate_chunks if c.get("score", 0.0) >= MIN_SCORE][:4]
 
-    # 3. Generate response via Gemini (with multi-model fallback and Grounded -> General rules)
     try:
         res = await ai.get_response(
             message=user_text,
@@ -356,7 +474,6 @@ async def chat_endpoint(
 
     resp_time = round(time.time() - start_t, 3)
 
-    # 4. Log interaction internally for admin insights (never exposed to student)
     try:
         resp_time_ms = int(resp_time * 1000)
         answer_preview = res.get("reply", "")[:200]

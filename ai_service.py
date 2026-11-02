@@ -4,7 +4,7 @@ import base64
 import re
 import html
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, AsyncGenerator, Tuple
 import httpx
 from pydantic import BaseModel, Field, field_validator
 
@@ -392,6 +392,82 @@ class AIService:
             print(f"[Image Text Extraction Error]: {e}")
             return ""
 
+    def _get_scenario_instructions(self, scenario: str, course: str, level: str, level_prefix: str) -> str:
+        """Returns pedagogically tuned scenario instructions for the coaching persona."""
+        if scenario == "ANSWER_WRITING":
+            return f"""{level_prefix}
+CURRENT SCENARIO: ANSWER-WRITING PRACTICE REQUEST
+1. The student wants an authentic exam question to practice descriptive or case-study answer writing for {course} {level}.
+2. Provide ONE realistic, exam-standard case scenario or descriptive question (typically 4-6 marks) matching the requested topic/subject.
+3. State the marks weightage and recommended time limit (e.g. **Weightage: 5 Marks | Recommended Time: 8-10 Minutes**).
+4. STRICTLY DO NOT PROVIDE THE ANSWER, HINTS, OR MODEL SOLUTION IN THIS INITIAL RESPONSE. Withhold the answer completely so the student can draft their own answer first!
+5. CONVERSATIONAL TONE & FOLLOW-UP (TALK LIKE A FRIEND):
+   Talk warmly, naturally, and encouragingly like a senior mentor-friend.
+   Conclude by warmly inviting them to attempt it:
+   "👉 **Your Turn:** Take about 8-10 minutes to draft your answer! Outline your statutory provisions, analysis, and conclusion right here (or snap a photo of your handwritten sheet). Once you share it, I'll review it with step-wise marks and feedback. Or if you want to skip straight to the model answer, just let me know and I'll walk you through it!"
+"""
+        elif scenario == "PRACTICE":
+            return f"""{level_prefix}
+CURRENT SCENARIO: TOPIC / SUBJECT PRACTICE REQUEST
+1. The student wants questions to practice or test their knowledge.
+2. If a specific topic/subject is provided: provide 1 to 3 exam-level question(s) (or practical numerical / MCQs) matching {course} {level}.
+   If NO specific topic is provided (e.g. student just said "I want to practice"): ask them warmly what subject or topic from {course} {level} they'd like to crush today (e.g. Law, Costing, Tax, Audit, Accounts) and whether they want answer-writing, numerical practice, or MCQs.
+3. For questions provided: clearly state the marks weightage for each question.
+4. STRICTLY DO NOT REVEAL THE ANSWERS, WORKING NOTES, OR SOLUTIONS IN THIS INITIAL RESPONSE. Give the student the opportunity to attempt them!
+5. CONVERSATIONAL TONE & FOLLOW-UP (TALK LIKE A FRIEND):
+   Talk warmly and naturally like a senior friend and coach.
+   Conclude by inviting them to try it out:
+   "Give it a shot! Drop your thoughts, steps, or final figures right here and I'll check your work. Or if you get stuck and want hints or want me to reveal the full solution with working notes, just say the word!"
+"""
+        elif scenario == "HINT_REQUEST":
+            return f"""{level_prefix}
+CURRENT SCENARIO: HINT REQUEST
+1. The student is asking for a hint or clue for the practice question under discussion.
+2. Provide a helpful, encouraging clue or thought-starter (e.g. pointing towards the key section number, standard formula, or threshold to consider).
+3. DO NOT reveal the final answer, complete calculation, or entire conclusion. Give them just enough guidance to think and attempt.
+4. Conclude warmly: "Give that a thought and try taking the next step! What do you get?"
+"""
+        elif scenario == "SOLUTION_REQUEST":
+            return f"""{level_prefix}
+CURRENT SCENARIO: STUDENT ASKS FOR THE ANSWER / SOLUTION
+1. The student is specifically asking for the solution, model answer, or working notes for the question discussed.
+2. Provide the complete, comprehensive, and definitive model solution in ONE response.
+3. Structure it according to official exam standards:
+   • Statutory Provisions / Accounting Standards / SAs (with exact Section/Standard numbers and titles)
+   • Step-by-step Working Notes and Computations (for practical subjects, in clean math notation without raw LaTeX)
+   • Direct Analysis and Final Conclusion
+4. CONVERSATIONAL TONE (TALK LIKE A FRIEND):
+   Present the solution warmly and supportively, pointing out how ICAI expects it presented to bag full marks.
+"""
+        elif scenario == "STUDENT_SUBMISSION":
+            return f"""{level_prefix}
+CURRENT SCENARIO: STUDENT ANSWER EVALUATION
+1. The student has submitted their written answer, attempt, or answer sheet.
+2. Evaluate their attempt warmly, constructively, and thoroughly like an encouraging senior mentor-friend.
+3. Provide:
+   • A Score out of total marks (e.g. 7.5 / 10).
+   • Step-Wise Marks Breakdown (Provisions, Application & Working, Conclusion & Presentation).
+   • Strengths (what they wrote accurately).
+   • Where marks were lost (missing sections, presentation gaps, calculation errors).
+   • The Suggested Model Answer in full exam format.
+4. Keep the tone inspiring, friendly, and practical.
+"""
+        elif scenario == "GENERAL_CONVERSATION":
+            return f"""{level_prefix}
+CURRENT SCENARIO: FRIENDLY CONVERSATION & STUDY MENTORSHIP
+Talk naturally, warmly, and empathetically like a trusted friend and senior mentor.
+Never sound like a stiff robot or use canned corporate templates. Be encouraging and provide practical, actionable study guidance.
+"""
+        else: # CONCEPT_DOUBT
+            return f"""{level_prefix}
+COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a clarifying question and never end with an offer to continue. If the question is ambiguous, state one assumption in a line and answer fully. For numericals show the full solution with working notes from start to final answer.
+CURRENT SCENARIO: CONCEPT / EXAM DOUBT RESOLUTION
+Explain the concept or provide the complete solution in ONE comprehensive response.
+For law/audit: State Statutory Provisions, Analysis & Application, and Conclusion.
+For practical/numerical: Show the full solution with step-by-step Working Notes from start to final answer in clean commerce math notation (no raw LaTeX).
+Talk warmly and clearly like a friendly mentor who makes tough topics easy to master.
+"""
+
     async def get_response(
         self,
         message: str,
@@ -437,79 +513,7 @@ class AIService:
 
         level_prefix = f"STUDENT LEVEL: The student is preparing for {course} {level}. Answer strictly within this level's syllabus, depth and exam pattern. Do not use concepts from higher levels unless asked."
 
-        if scenario == "ANSWER_WRITING":
-            scenario_instructions = f"""{level_prefix}
-CURRENT SCENARIO: ANSWER-WRITING PRACTICE REQUEST
-1. The student wants an authentic exam question to practice descriptive or case-study answer writing for {course} {level}.
-2. Provide ONE realistic, exam-standard case scenario or descriptive question (typically 4-6 marks) matching the requested topic/subject.
-3. State the marks weightage and recommended time limit (e.g. **Weightage: 5 Marks | Recommended Time: 8-10 Minutes**).
-4. STRICTLY DO NOT PROVIDE THE ANSWER, HINTS, OR MODEL SOLUTION IN THIS INITIAL RESPONSE. Withhold the answer completely so the student can draft their own answer first!
-5. CONVERSATIONAL TONE & FOLLOW-UP (TALK LIKE A FRIEND):
-   Talk warmly, naturally, and encouragingly like a senior mentor-friend.
-   Conclude by warmly inviting them to attempt it:
-   "👉 **Your Turn:** Take about 8-10 minutes to draft your answer! Outline your statutory provisions, analysis, and conclusion right here (or snap a photo of your handwritten sheet). Once you share it, I'll review it with step-wise marks and feedback. Or if you want to skip straight to the model answer, just let me know and I'll walk you through it!"
-"""
-        elif scenario == "PRACTICE":
-            scenario_instructions = f"""{level_prefix}
-CURRENT SCENARIO: TOPIC / SUBJECT PRACTICE REQUEST
-1. The student wants questions to practice or test their knowledge.
-2. If a specific topic/subject is provided: provide 1 to 3 exam-level question(s) (or practical numerical / MCQs) matching {course} {level}.
-   If NO specific topic is provided (e.g. student just said "I want to practice"): ask them warmly what subject or topic from {course} {level} they'd like to crush today (e.g. Law, Costing, Tax, Audit, Accounts) and whether they want answer-writing, numerical practice, or MCQs.
-3. For questions provided: clearly state the marks weightage for each question.
-4. STRICTLY DO NOT REVEAL THE ANSWERS, WORKING NOTES, OR SOLUTIONS IN THIS INITIAL RESPONSE. Give the student the opportunity to attempt them!
-5. CONVERSATIONAL TONE & FOLLOW-UP (TALK LIKE A FRIEND):
-   Talk warmly and naturally like a senior friend and coach.
-   Conclude by inviting them to try it out:
-   "Give it a shot! Drop your thoughts, steps, or final figures right here and I'll check your work. Or if you get stuck and want hints or want me to reveal the full solution with working notes, just say the word!"
-"""
-        elif scenario == "HINT_REQUEST":
-            scenario_instructions = f"""{level_prefix}
-CURRENT SCENARIO: HINT REQUEST
-1. The student is asking for a hint or clue for the practice question under discussion.
-2. Provide a helpful, encouraging clue or thought-starter (e.g. pointing towards the key section number, standard formula, or threshold to consider).
-3. DO NOT reveal the final answer, complete calculation, or entire conclusion. Give them just enough guidance to think and attempt.
-4. Conclude warmly: "Give that a thought and try taking the next step! What do you get?"
-"""
-        elif scenario == "SOLUTION_REQUEST":
-            scenario_instructions = f"""{level_prefix}
-CURRENT SCENARIO: STUDENT ASKS FOR THE ANSWER / SOLUTION
-1. The student is specifically asking for the solution, model answer, or working notes for the question discussed.
-2. Provide the complete, comprehensive, and definitive model solution in ONE response.
-3. Structure it according to official exam standards:
-   • Statutory Provisions / Accounting Standards / SAs (with exact Section/Standard numbers and titles)
-   • Step-by-step Working Notes and Computations (for practical subjects, in clean math notation without raw LaTeX)
-   • Direct Analysis and Final Conclusion
-4. CONVERSATIONAL TONE (TALK LIKE A FRIEND):
-   Present the solution warmly and supportively, pointing out how ICAI expects it presented to bag full marks.
-"""
-        elif scenario == "STUDENT_SUBMISSION":
-            scenario_instructions = f"""{level_prefix}
-CURRENT SCENARIO: STUDENT ANSWER EVALUATION
-1. The student has submitted their written answer, attempt, or answer sheet.
-2. Evaluate their attempt warmly, constructively, and thoroughly like an encouraging senior mentor-friend.
-3. Provide:
-   • A Score out of total marks (e.g. 7.5 / 10).
-   • Step-Wise Marks Breakdown (Provisions, Application & Working, Conclusion & Presentation).
-   • Strengths (what they wrote accurately).
-   • Where marks were lost (missing sections, presentation gaps, calculation errors).
-   • The Suggested Model Answer in full exam format.
-4. Keep the tone inspiring, friendly, and practical.
-"""
-        elif scenario == "GENERAL_CONVERSATION":
-            scenario_instructions = f"""{level_prefix}
-CURRENT SCENARIO: FRIENDLY CONVERSATION & STUDY MENTORSHIP
-Talk naturally, warmly, and empathetically like a trusted friend and senior mentor.
-Never sound like a stiff robot or use canned corporate templates. Be encouraging and provide practical, actionable study guidance.
-"""
-        else: # CONCEPT_DOUBT
-            scenario_instructions = f"""{level_prefix}
-COMPLETENESS (STRICT): Give the complete answer in ONE response. Never ask a clarifying question and never end with an offer to continue. If the question is ambiguous, state one assumption in a line and answer fully. For numericals show the full solution with working notes from start to final answer.
-CURRENT SCENARIO: CONCEPT / EXAM DOUBT RESOLUTION
-Explain the concept or provide the complete solution in ONE comprehensive response.
-For law/audit: State Statutory Provisions, Analysis & Application, and Conclusion.
-For practical/numerical: Show the full solution with step-by-step Working Notes from start to final answer in clean commerce math notation (no raw LaTeX).
-Talk warmly and clearly like a friendly mentor who makes tough topics easy to master.
-"""
+        scenario_instructions = self._get_scenario_instructions(scenario, course, level, level_prefix)
 
         # Check if user explicitly forces internet / external research
         forced_internet = is_forced_internet_query(user_query)
@@ -656,6 +660,89 @@ GENERAL KNOWLEDGE RULES:
             "top_score": float(top_score),
             "model_used": self.last_model_used
         }
+
+
+    async def stream_response(
+        self,
+        message: str,
+        image_base64: Optional[str] = None,
+        mime_type: str = "image/jpeg",
+        context_chunks: Optional[List[Dict[str, Any]]] = None,
+        course: str = "CA",
+        level: str = "Inter",
+        history: Optional[List[Dict[str, Any]]] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Streaming version of get_response: yields text tokens in real time as an async generator.
+        """
+        if not self.has_api_key():
+            raise Exception("GEMINI_API_KEY is not configured.")
+
+        # 1. Format conversation history (last 6 turns)
+        history_text = ""
+        if history:
+            history_text = "\n[Recent Conversation History]:\n"
+            for h in history[-6:]:
+                role_label = "Student" if h.get("role") in ["user", "student"] else "Coach"
+                msg_body = h.get("text") or h.get("content") or ""
+                if msg_body:
+                    history_text += f"{role_label}: {msg_body}\n"
+            history_text += "\n"
+
+        images = []
+        if image_base64:
+            images.append({
+                "mime_type": mime_type,
+                "data": image_base64
+            })
+
+        user_query = message.strip() if message else "Please evaluate this student submission."
+        scenario = detect_interaction_scenario(user_query, history=history, has_image=bool(image_base64))
+        level_prefix = f"STUDENT LEVEL: The student is preparing for {course} {level}. Answer strictly within this level's syllabus, depth and exam pattern. Do not use concepts from higher levels unless asked."
+
+        scenario_instructions = self._get_scenario_instructions(scenario, course, level, level_prefix)
+
+        # Grounded study material or general knowledge
+        if context_chunks and len(context_chunks) > 0:
+            excerpts_text = "\n\n".join([
+                f"--- Excerpt {idx+1} ({c.get('section', '')}) ---\n{c.get('content', '')}"
+                for idx, c in enumerate(context_chunks)
+            ])
+            system_instruction = f"""{SYSTEM_PROMPT}
+
+{scenario_instructions}
+
+GROUNDED COACHING RULES:
+- Answer the student's question authoritatively and comprehensively using the provided study material excerpts and standard {course} {level} syllabus standards.
+- Give the complete answer in ONE response.
+- Never mention files, excerpts, retrieval, or sources in your response. Speak naturally and warmly as a mentor and coach.
+"""
+            prompt = f"""{history_text}[Uploaded Institute Study Material Excerpts]:
+{excerpts_text}
+
+Student Query:
+{user_query}
+"""
+        else:
+            system_instruction = f"""{SYSTEM_PROMPT}
+
+{scenario_instructions}
+
+GENERAL KNOWLEDGE RULES:
+- Answer the student's question thoroughly and completely in ONE response using standard {course} {level} syllabus knowledge.
+- Never mention files, retrieval, or sources. Speak naturally as an expert faculty mentor.
+"""
+            prompt = f"""{history_text}Student Query:
+{user_query}
+"""
+
+        async for token in self._stream_llm(
+            prompt,
+            images=images,
+            system_instruction=system_instruction,
+            max_tokens=8192
+        ):
+            yield token
 
     async def generate_interactive_mcqs(
         self,
@@ -1101,3 +1188,166 @@ Return STRICT JSON ONLY matching this exact schema:
                 print(f"[{model} failed]: {err}")
 
         raise Exception(f"All Gemini models exhausted. Last error: {last_error}")
+
+    async def _stream_gemini_api(
+        self,
+        prompt: str,
+        images: Optional[List[Dict[str, str]]] = None,
+        system_instruction: str = "",
+        max_tokens: int = 8192
+    ) -> AsyncGenerator[str, None]:
+        """Streams tokens from Gemini API via Server-Sent Events (?alt=sse)."""
+        parts: List[Dict[str, Any]] = []
+        if images:
+            for img in images:
+                parts.append({
+                    "inline_data": {
+                        "mime_type": img.get("mime_type", "image/jpeg"),
+                        "data": img.get("data", "")
+                    }
+                })
+        parts.append({"text": prompt})
+
+        gen_config: Dict[str, Any] = {
+            "temperature": 0.2,
+            "maxOutputTokens": max_tokens,
+        }
+
+        payload: Dict[str, Any] = {
+            "contents": [{"parts": parts}],
+            "generationConfig": gen_config
+        }
+
+        if system_instruction:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_instruction}]
+            }
+
+        last_error = None
+        models_to_try = list(self.models)
+        for extra in ["gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-1.5-flash"]:
+            if extra not in models_to_try:
+                models_to_try.append(extra)
+
+        for model in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={self.api_key}"
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    async with client.stream("POST", url, json=payload) as resp:
+                        if resp.status_code == 200:
+                            yielded_any = False
+                            async for line in resp.aiter_lines():
+                                line = line.strip()
+                                if not line or not line.startswith("data:"):
+                                    continue
+                                json_str = line[5:].strip()
+                                if not json_str:
+                                    continue
+                                try:
+                                    chunk = json.loads(json_str)
+                                    candidates = chunk.get("candidates", [])
+                                    if candidates:
+                                        cand_parts = candidates[0].get("content", {}).get("parts", [])
+                                        for p in cand_parts:
+                                            text_chunk = p.get("text", "")
+                                            if text_chunk:
+                                                yielded_any = True
+                                                yield text_chunk
+                                except Exception:
+                                    continue
+                            if yielded_any:
+                                self.last_model_used = model
+                                return
+                            else:
+                                last_error = f"Model {model} returned empty stream"
+                        else:
+                            error_body = await resp.aread()
+                            last_error = f"Model {model} returned HTTP {resp.status_code}: {error_body[:100]}"
+                            print(f"[{model} stream notice]: {last_error}")
+            except Exception as err:
+                last_error = f"Model {model} stream error: {err}"
+                print(f"[{model} stream failed]: {err}")
+
+        raise Exception(f"All Gemini models exhausted during streaming. Last error: {last_error}")
+
+    async def _stream_openai_api(
+        self,
+        prompt: str,
+        system_instruction: str = "",
+        max_tokens: int = 4096
+    ) -> AsyncGenerator[str, None]:
+        """Streams tokens from OpenAI ChatGPT API."""
+        if not self.openai_api_key:
+            raise Exception("OPENAI_API_KEY is not configured.")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.openai_api_key}",
+            "Content-Type": "application/json"
+        }
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": self.openai_model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "stream": True
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                if resp.status_code == 200:
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        raw = line[5:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    yield content
+                        except Exception:
+                            continue
+                    self.last_model_used = f"openai/{self.openai_model}"
+                else:
+                    body = await resp.aread()
+                    raise Exception(f"OpenAI error {resp.status_code}: {body}")
+
+    async def _stream_llm(
+        self,
+        prompt: str,
+        images: Optional[List[Dict[str, str]]] = None,
+        system_instruction: str = "",
+        max_tokens: int = 8192
+    ) -> AsyncGenerator[str, None]:
+        """Routes streaming to preferred LLM with automatic failover."""
+        if self.preferred_llm == "openai" and self.openai_api_key:
+            try:
+                async for token in self._stream_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens):
+                    yield token
+                return
+            except Exception as e:
+                print(f"[OpenAI Stream Notice]: {e}. Falling back to Gemini.")
+                async for token in self._stream_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens):
+                    yield token
+        else:
+            try:
+                async for token in self._stream_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens):
+                    yield token
+            except Exception as e:
+                if self.openai_api_key:
+                    print(f"[Gemini Stream Notice]: {e}. Falling back to OpenAI ({self.openai_model}).")
+                    async for token in self._stream_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens):
+                        yield token
+                else:
+                    raise
+
