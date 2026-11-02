@@ -41,6 +41,7 @@ From the study material, Section 115BAC is default."""
         ]
 
         with patch("app.cloud_store.query", new_callable=AsyncMock, return_value=mock_chunks) as mock_query, \
+             patch("app.reranker.rerank", new_callable=AsyncMock, return_value=[mock_chunks[0]]) as mock_rerank, \
              patch("app.ai.get_response", new_callable=AsyncMock) as mock_ai_resp:
             
             mock_ai_resp.return_value = {

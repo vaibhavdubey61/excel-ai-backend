@@ -8,3 +8,4 @@ numpy>=1.26.0
 pydantic>=2.6.0
 cryptography>=3.1
 youtube-transcript-api>=1.2.0
+sentence-transformers>=2.7.0

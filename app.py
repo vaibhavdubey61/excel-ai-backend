@@ -21,6 +21,7 @@ from rag_engine import RAGEngine, STUDY_MATERIALS_DIR
 from ai_service import AIService, clean_student_reply
 from cloud_vector_store import CloudVectorStore, PINECONE_INDEX_HOST
 from ingest_materials import detect_subject
+from reranker import get_reranker, CrossEncoderReranker
 import db
 import syllabus
 import video_service
@@ -105,9 +106,10 @@ def verify_admin(request: Request):
     if not key or key != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid Admin Key")
 
-# Initialize Cloud Vector Store, Local Fallback, and AI Engine
+# Initialize Cloud Vector Store, Local Fallback, Reranker, and AI Engine
 cloud_store = CloudVectorStore(gemini_api_key=GEMINI_KEY, pinecone_api_key=PINECONE_KEY, index_host=PINECONE_HOST)
 local_rag = RAGEngine(storage_dir=STUDY_MATERIALS_DIR)
+reranker = get_reranker()
 ai = AIService(api_key=GEMINI_KEY)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -283,41 +285,56 @@ async def chat_endpoint(
         if last_user_turn:
             search_query = f"{last_user_turn} {user_text}".strip()
 
-    # 2. Search Pinecone Knowledge Base in student's namespace with 8.0s timeout
+    # 2. Two-Stage RAG Pipeline: Stage 1 Candidate Retrieval (Top 20) + Stage 2 Cross-Encoder Reranking
     ns = syllabus.namespace(c_norm, l_norm)
-    chunks = []
+    candidate_chunks: List[Dict[str, Any]] = []
+    chunks: List[Dict[str, Any]] = []
     retrieval_ok = True
     start_t = time.time()
 
     if search_query:
+        # Stage 1A: Search Pinecone Knowledge Base in student's namespace (fetch top 20 candidates)
         try:
             raw_chunks = await asyncio.wait_for(
-                cloud_store.query(search_query, namespace=ns, top_k=8),
-                timeout=4.0
+                cloud_store.query(search_query, namespace=ns, top_k=20),
+                timeout=6.0
             )
-            # Filter by MIN_SCORE (keep at most 5 chunks)
-            chunks = [ck for ck in raw_chunks if ck.get("score", 0.0) >= MIN_SCORE][:5]
+            candidate_chunks = list(raw_chunks)
         except Exception as e:
             print(f"[Vector DB notice ({ns})]: {e}. Checking local knowledge fallback...")
             retrieval_ok = False
 
-        # Fallback to local RAG knowledge base if cloud vector search is unavailable or returns 0 matches
-        if not chunks:
+        # Stage 1B: Fallback to local RAG (TF-IDF) if cloud vector search is unavailable or returns 0 matches
+        if not candidate_chunks:
             try:
-                local_results = local_rag.search(search_query, top_k=5)
+                local_results = local_rag.search(search_query, top_k=20)
                 for lr in local_results:
                     if lr.get("relevance_score", 0.0) >= 0.12:
-                        chunks.append({
+                        candidate_chunks.append({
                             "doc_name": lr.get("doc_name", ""),
                             "section": lr.get("section", ""),
                             "content": lr.get("content", ""),
                             "score": lr.get("relevance_score", 0.0),
                             "subject": lr.get("subject", "")
                         })
-                if chunks:
-                    print(f"[Local RAG Fallback]: Found {len(chunks)} relevant excerpts for query.")
+                if candidate_chunks:
+                    print(f"[Local RAG Fallback]: Found {len(candidate_chunks)} candidate excerpts for query.")
             except Exception as l_err:
                 print(f"[Local RAG notice]: {l_err}")
+
+        # Stage 2: Cross-Encoder Reranking (executed in thread pool via asyncio.to_thread)
+        # Re-scores candidate chunks, logs original vs reranked score, sorts, and applies MIN_SCORE filter
+        if candidate_chunks:
+            try:
+                chunks = await reranker.rerank(
+                    query=search_query,
+                    chunks=candidate_chunks,
+                    top_k=4,
+                    min_score=MIN_SCORE
+                )
+            except Exception as r_err:
+                print(f"[Reranker Warning]: Cross-Encoder reranking error: {r_err}. Falling back to un-reranked top chunks.")
+                chunks = [c for c in candidate_chunks if c.get("score", 0.0) >= MIN_SCORE][:4]
 
     # 3. Generate response via Gemini (with multi-model fallback and Grounded -> General rules)
     try:
@@ -886,7 +903,8 @@ async def health_check():
     return {
         "status": "ok",
         "cloud_vector_db": "Pinecone Serverless (AWS)",
-        "ai_model": "Google Gemini 1.5 Flash (Live)"
+        "ai_model": "Google Gemini 1.5 Flash (Live)",
+        "reranker": reranker.model_name if reranker.is_available() else "fallback"
     }
 
 
