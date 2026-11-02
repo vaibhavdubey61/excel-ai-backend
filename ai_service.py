@@ -1,4 +1,84 @@
 import os
+import logging
+import pybreaker
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception,
+    before_sleep_log,
+)
+
+logger = logging.getLogger("excel_ai.llm")
+
+FALLBACK_DEMAND_MESSAGE = "Our AI faculty is temporarily experiencing high demand. Please try again in a moment."
+
+class CircuitBreakerLoggingListener(pybreaker.CircuitBreakerListener):
+    """Logs circuit breaker state transitions clearly."""
+    def state_change(self, cb, old_state, new_state):
+        print(f"[CircuitBreaker Alert]: LLM API State transition: {old_state.name.upper()} -> {new_state.name.upper()} (failures: {cb.fail_counter})")
+        logger.warning(f"[CircuitBreaker Alert]: LLM API State transition: {old_state.name.upper()} -> {new_state.name.upper()} (failures: {cb.fail_counter})")
+
+    def failure(self, cb, exc):
+        print(f"[CircuitBreaker]: Call failed ({exc}). Consecutive failure count: {cb.fail_counter}/{cb.fail_max}")
+        logger.warning(f"[CircuitBreaker]: Call failed ({exc}). Consecutive failure count: {cb.fail_counter}/{cb.fail_max}")
+
+    def success(self, cb):
+        logger.info(f"[CircuitBreaker]: Call succeeded. State: {cb.current_state}")
+
+class AsyncCircuitBreaker(pybreaker.CircuitBreaker):
+    """
+    Async-compatible CircuitBreaker for coroutines.
+    Supports before_call checks, half-open test requests, and fail-fast when open.
+    """
+    async def call_async(self, func, *args, **kwargs):
+        with self._lock:
+            self.state.before_call(func, *args, **kwargs)
+            for listener in self.listeners:
+                listener.before_call(self, func, *args, **kwargs)
+        try:
+            ret = await func(*args, **kwargs)
+        except BaseException as e:
+            with self._lock:
+                self.state._handle_error(e)
+            raise
+        else:
+            with self._lock:
+                self.state._handle_success()
+            return ret
+
+CIRCUIT_BREAKER_FAIL_MAX = int(os.getenv("CIRCUIT_BREAKER_FAIL_MAX", "3"))
+CIRCUIT_BREAKER_RESET_TIMEOUT = float(os.getenv("CIRCUIT_BREAKER_RESET_TIMEOUT", "30"))
+
+llm_circuit_breaker = AsyncCircuitBreaker(
+    fail_max=CIRCUIT_BREAKER_FAIL_MAX,
+    reset_timeout=CIRCUIT_BREAKER_RESET_TIMEOUT,
+    listeners=[CircuitBreakerLoggingListener()],
+    name="llm_circuit_breaker"
+)
+
+def is_retryable_llm_error(exc: BaseException) -> bool:
+    """
+    Do not retry on client errors (like 400 Bad Request unless related to API key configuration),
+    only on server errors (5xx), timeouts, network drops, or external API key failures.
+    Never retry if circuit breaker is already open.
+    """
+    if isinstance(exc, pybreaker.CircuitBreakerError):
+        return False
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError)):
+        return True
+
+    err_str = str(exc).lower()
+    if ("400" in err_str or "bad request" in err_str) and "api_key" not in err_str and "invalid key" not in err_str:
+        return False
+    if "404" in err_str or "not found" in err_str:
+        return False
+    if "422" in err_str:
+        return False
+
+    return True
+
+import os
 import json
 import base64
 import re
@@ -372,6 +452,7 @@ class AIService:
         self.preferred_llm = os.getenv("PREFERRED_LLM", "gemini").lower()
         self.models = CANDIDATE_MODELS
         self.last_model_used: str = CANDIDATE_MODELS[0]
+        self.circuit_breaker = llm_circuit_breaker
 
     def set_api_key(self, key: str):
         self.api_key = key.strip()
@@ -487,6 +568,16 @@ Talk warmly and clearly like a friendly mentor who makes tough topics easy to ma
             raise Exception("GEMINI_API_KEY is not configured.")
 
         top_score = max([c.get("score", 0.0) for c in (context_chunks or [])], default=0.0)
+
+        # Fail fast if external LLM circuit breaker is OPEN
+        if self.circuit_breaker.current_state == "open":
+            print("[CircuitBreaker Fast-Fail]: Circuit is OPEN. Returning fallback response immediately.")
+            return {
+                "reply": FALLBACK_DEMAND_MESSAGE,
+                "source": "circuit_breaker",
+                "top_score": float(top_score),
+                "model_used": "circuit-breaker-open"
+            }
 
         # 1. Format conversation history (last 6 turns)
         history_text = ""
@@ -654,6 +745,14 @@ GENERAL KNOWLEDGE RULES:
             max_tokens=8192
         )
 
+        if raw_reply == FALLBACK_DEMAND_MESSAGE or self.circuit_breaker.current_state == "open":
+            return {
+                "reply": FALLBACK_DEMAND_MESSAGE,
+                "source": "circuit_breaker",
+                "top_score": float(top_score),
+                "model_used": "circuit-breaker-tripped"
+            }
+
         return {
             "reply": clean_student_reply(raw_reply),
             "source": "general",
@@ -677,6 +776,12 @@ GENERAL KNOWLEDGE RULES:
         """
         if not self.has_api_key():
             raise Exception("GEMINI_API_KEY is not configured.")
+
+        # Fail fast in streaming if circuit breaker is OPEN
+        if self.circuit_breaker.current_state == "open":
+            print("[CircuitBreaker Fast-Fail]: Circuit is OPEN. Yielding fallback response immediately.")
+            yield FALLBACK_DEMAND_MESSAGE
+            return
 
         # 1. Format conversation history (last 6 turns)
         history_text = ""
@@ -1089,6 +1194,43 @@ Return STRICT JSON ONLY matching this exact schema:
             else:
                 raise Exception(f"OpenAI error {resp.status_code}: {resp.text}")
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(
+            multiplier=float(os.getenv("RETRY_MULTIPLIER", "1")),
+            min=float(os.getenv("RETRY_MIN_WAIT", "2")),
+            max=float(os.getenv("RETRY_MAX_WAIT", "10"))
+        ),
+        retry=retry_if_exception(is_retryable_llm_error),
+        reraise=True
+    )
+    async def _execute_core_llm_call(
+        self,
+        prompt: str,
+        images: Optional[List[Dict[str, str]]] = None,
+        system_instruction: str = "",
+        max_tokens: int = 8192,
+        json_mode: bool = False
+    ) -> str:
+        """Executes core LLM call protected by pybreaker.CircuitBreaker."""
+        async def _call():
+            if self.preferred_llm == "openai" and self.openai_api_key:
+                try:
+                    return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+                except Exception as e:
+                    print(f"[OpenAI Call Notice]: {e}. Falling back to Gemini.")
+                    return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+            else:
+                try:
+                    return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+                except Exception as e:
+                    if self.openai_api_key:
+                        print(f"[Gemini Call Notice]: {e}. Falling back to OpenAI ({self.openai_model}).")
+                        return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
+                    raise
+
+        return await self.circuit_breaker.call_async(_call)
+
     async def _call_llm(
         self,
         prompt: str,
@@ -1097,21 +1239,26 @@ Return STRICT JSON ONLY matching this exact schema:
         max_tokens: int = 8192,
         json_mode: bool = False
     ) -> str:
-        """Routes to preferred LLM (Gemini or OpenAI) with automatic fallback between providers."""
-        if self.preferred_llm == "openai" and self.openai_api_key:
-            try:
-                return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
-            except Exception as e:
-                print(f"[OpenAI Call Notice]: {e}. Falling back to Gemini.")
-                return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
-        else:
-            try:
-                return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
-            except Exception as e:
-                if self.openai_api_key:
-                    print(f"[Gemini Call Notice]: {e}. Falling back to OpenAI ({self.openai_model}).")
-                    return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
-                raise
+        """Routes to core LLM with CircuitBreaker and Tenacity retry protection."""
+        if self.circuit_breaker.current_state == "open":
+            print(f"[CircuitBreaker Fast-Fail]: Circuit is OPEN. Returning fallback response immediately.")
+            return FALLBACK_DEMAND_MESSAGE
+
+        try:
+            return await self._execute_core_llm_call(
+                prompt=prompt,
+                images=images,
+                system_instruction=system_instruction,
+                max_tokens=max_tokens,
+                json_mode=json_mode
+            )
+        except pybreaker.CircuitBreakerError as cbe:
+            print(f"[CircuitBreaker Tripped]: {cbe}. Returning fallback message immediately.")
+            return FALLBACK_DEMAND_MESSAGE
+        except Exception as e:
+            if self.circuit_breaker.current_state == "open":
+                return FALLBACK_DEMAND_MESSAGE
+            raise
 
     async def _call_gemini_api(
         self,
