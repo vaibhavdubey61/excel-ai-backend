@@ -1,5 +1,6 @@
 import os
 import logging
+import structlog
 import pybreaker
 from tenacity import (
     retry,
@@ -9,18 +10,16 @@ from tenacity import (
     before_sleep_log,
 )
 
-logger = logging.getLogger("excel_ai.llm")
+logger = structlog.get_logger("excel_ai.llm")
 
 FALLBACK_DEMAND_MESSAGE = "Our AI faculty is temporarily experiencing high demand. Please try again in a moment."
 
 class CircuitBreakerLoggingListener(pybreaker.CircuitBreakerListener):
     """Logs circuit breaker state transitions clearly."""
     def state_change(self, cb, old_state, new_state):
-        print(f"[CircuitBreaker Alert]: LLM API State transition: {old_state.name.upper()} -> {new_state.name.upper()} (failures: {cb.fail_counter})")
         logger.warning(f"[CircuitBreaker Alert]: LLM API State transition: {old_state.name.upper()} -> {new_state.name.upper()} (failures: {cb.fail_counter})")
 
     def failure(self, cb, exc):
-        print(f"[CircuitBreaker]: Call failed ({exc}). Consecutive failure count: {cb.fail_counter}/{cb.fail_max}")
         logger.warning(f"[CircuitBreaker]: Call failed ({exc}). Consecutive failure count: {cb.fail_counter}/{cb.fail_max}")
 
     def success(self, cb):
@@ -303,7 +302,7 @@ def perform_web_search(query: str, max_results: int = 4) -> List[Dict[str, str]]
                     break
             return results
     except Exception as e:
-        print(f"[Web search warning]: {e}")
+        logger.warning("Web search warning", error=str(e))
         return []
 
 def is_forced_internet_query(text: str) -> bool:
@@ -470,7 +469,7 @@ class AIService:
             res = await self._call_llm(prompt, images=images, max_tokens=1024)
             return res.strip()
         except Exception as e:
-            print(f"[Image Text Extraction Error]: {e}")
+            logger.error("Image text extraction error", error=str(e))
             return ""
 
     def _get_scenario_instructions(self, scenario: str, course: str, level: str, level_prefix: str) -> str:
@@ -571,7 +570,7 @@ Talk warmly and clearly like a friendly mentor who makes tough topics easy to ma
 
         # Fail fast if external LLM circuit breaker is OPEN
         if self.circuit_breaker.current_state == "open":
-            print("[CircuitBreaker Fast-Fail]: Circuit is OPEN. Returning fallback response immediately.")
+            logger.warning("Circuit breaker is OPEN, returning fallback response immediately")
             return {
                 "reply": FALLBACK_DEMAND_MESSAGE,
                 "source": "circuit_breaker",
@@ -617,7 +616,7 @@ Talk warmly and clearly like a friendly mentor who makes tough topics easy to ma
                 loop = asyncio.get_running_loop()
                 web_results = await loop.run_in_executor(None, perform_web_search, search_term, 4)
             except Exception as ws_err:
-                print(f"[Web search execution error]: {ws_err}")
+                logger.warning("Web search execution error", error=str(ws_err))
 
             if web_results:
                 web_excerpts = "\n\n".join([f"[{i+1}] {r['title']}:\n{r['snippet']}" for i, r in enumerate(web_results)])
@@ -651,7 +650,7 @@ Student Query:
                         "model_used": self.last_model_used
                     }
                 except Exception as err:
-                    print(f"[Internet answer error]: {err}. Falling back to general knowledge.")
+                    logger.warning("Internet answer error, falling back to general knowledge", error=str(err))
 
         # STEP 1: Grounded answer from study material excerpts if available
         if context_chunks and len(context_chunks) > 0:
@@ -698,7 +697,7 @@ Student Query:
                 clean_reply = raw_reply.strip()
                 # Check if model output NOT_IN_MATERIAL
                 if clean_reply.startswith("NOT_IN_MATERIAL") or clean_reply == "NOT_IN_MATERIAL":
-                    print("[Grounded Check]: Excerpts do not cover query (NOT_IN_MATERIAL). Falling back to general knowledge.")
+                    logger.info("Excerpts do not cover query, falling back to general knowledge")
                 else:
                     return {
                         "reply": clean_student_reply(clean_reply),
@@ -707,7 +706,7 @@ Student Query:
                         "model_used": self.last_model_used
                     }
             except Exception as e:
-                print(f"[Grounded call notice]: {e}. Proceeding to general knowledge fallback.")
+                logger.info("Grounded call notice, proceeding to general knowledge fallback", error=str(e))
 
         # STEP 2: General Knowledge Fallback
         if scenario in ["ANSWER_WRITING", "PRACTICE"]:
@@ -779,7 +778,7 @@ GENERAL KNOWLEDGE RULES:
 
         # Fail fast in streaming if circuit breaker is OPEN
         if self.circuit_breaker.current_state == "open":
-            print("[CircuitBreaker Fast-Fail]: Circuit is OPEN. Yielding fallback response immediately.")
+            logger.warning("Circuit breaker is OPEN, yielding fallback response immediately")
             yield FALLBACK_DEMAND_MESSAGE
             return
 
@@ -992,7 +991,7 @@ CRITICAL REQUIREMENTS:
         try:
             validated_questions = parse_and_validate(raw_output)
         except Exception as first_err:
-            print(f"[MCQ Parse Attempt 1 Failed]: {first_err}. Retrying with corrective prompt...")
+            logger.warning("MCQ parse attempt 1 failed, retrying with corrective prompt", error=str(first_err))
             corrective_prompt = (
                 f"{prompt}\n\n"
                 f"CORRECTION REQUIRED: Your previous response failed validation: {str(first_err)}.\n"
@@ -1138,7 +1137,7 @@ Return STRICT JSON ONLY matching this exact schema:
             if "marks_obtained" in parsed and "rubric_breakdown" in parsed:
                 return parsed
         except Exception as e:
-            print(f"[Evaluation JSON parse failed]: {e}")
+            logger.warning("Evaluation JSON parse failed", error=str(e))
 
         return {
             "marks_obtained": round(total_marks * 0.7, 1),
@@ -1218,14 +1217,14 @@ Return STRICT JSON ONLY matching this exact schema:
                 try:
                     return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
                 except Exception as e:
-                    print(f"[OpenAI Call Notice]: {e}. Falling back to Gemini.")
+                    logger.info("OpenAI call notice, falling back to Gemini", error=str(e))
                     return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
             else:
                 try:
                     return await self._call_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
                 except Exception as e:
                     if self.openai_api_key:
-                        print(f"[Gemini Call Notice]: {e}. Falling back to OpenAI ({self.openai_model}).")
+                        logger.info("Gemini call notice, falling back to OpenAI", model=self.openai_model, error=str(e))
                         return await self._call_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens, json_mode=json_mode)
                     raise
 
@@ -1241,7 +1240,7 @@ Return STRICT JSON ONLY matching this exact schema:
     ) -> str:
         """Routes to core LLM with CircuitBreaker and Tenacity retry protection."""
         if self.circuit_breaker.current_state == "open":
-            print(f"[CircuitBreaker Fast-Fail]: Circuit is OPEN. Returning fallback response immediately.")
+            logger.warning("Circuit breaker is OPEN, returning fallback response immediately")
             return FALLBACK_DEMAND_MESSAGE
 
         try:
@@ -1253,7 +1252,7 @@ Return STRICT JSON ONLY matching this exact schema:
                 json_mode=json_mode
             )
         except pybreaker.CircuitBreakerError as cbe:
-            print(f"[CircuitBreaker Tripped]: {cbe}. Returning fallback message immediately.")
+            logger.warning("Circuit breaker tripped, returning fallback message immediately", error=str(cbe))
             return FALLBACK_DEMAND_MESSAGE
         except Exception as e:
             if self.circuit_breaker.current_state == "open":
@@ -1312,7 +1311,7 @@ Return STRICT JSON ONLY matching this exact schema:
                         candidates = result.get("candidates", [])
                         if not candidates:
                             last_error = f"Model {model} returned no candidates"
-                            print(f"[{model} unavailable]: {last_error}")
+                            logger.warning("Gemini model unavailable", model=model, error=last_error)
                             continue
 
                         cand = candidates[0]
@@ -1321,7 +1320,7 @@ Return STRICT JSON ONLY matching this exact schema:
                         finish_reason = cand.get("finishReason", "UNKNOWN")
 
                         if not full_text.strip():
-                            print(f"[{model} returned empty text, finishReason={finish_reason}]. Trying next model...")
+                            logger.warning("Gemini model returned empty text, trying next model", model=model, finish_reason=finish_reason)
                             last_error = f"Model {model} returned empty text (finishReason={finish_reason})"
                             continue
 
@@ -1329,10 +1328,10 @@ Return STRICT JSON ONLY matching this exact schema:
                         return full_text
                     else:
                         last_error = f"Model {model} returned HTTP {resp.status_code}: {resp.text[:100]}"
-                        print(f"[{model} unavailable]: {last_error}")
+                        logger.warning("Gemini model unavailable", model=model, error=last_error)
             except Exception as err:
                 last_error = f"Model {model} error: {err}"
-                print(f"[{model} failed]: {err}")
+                logger.error("Gemini model call failed", model=model, error=str(err))
 
         raise Exception(f"All Gemini models exhausted. Last error: {last_error}")
 
@@ -1410,10 +1409,10 @@ Return STRICT JSON ONLY matching this exact schema:
                         else:
                             error_body = await resp.aread()
                             last_error = f"Model {model} returned HTTP {resp.status_code}: {error_body[:100]}"
-                            print(f"[{model} stream notice]: {last_error}")
+                            logger.warning("Gemini stream notice", model=model, error=last_error)
             except Exception as err:
                 last_error = f"Model {model} stream error: {err}"
-                print(f"[{model} stream failed]: {err}")
+                logger.error("Gemini stream failed", model=model, error=str(err))
 
         raise Exception(f"All Gemini models exhausted during streaming. Last error: {last_error}")
 
@@ -1483,7 +1482,7 @@ Return STRICT JSON ONLY matching this exact schema:
                     yield token
                 return
             except Exception as e:
-                print(f"[OpenAI Stream Notice]: {e}. Falling back to Gemini.")
+                logger.info("OpenAI stream notice, falling back to Gemini", error=str(e))
                 async for token in self._stream_gemini_api(prompt, images=images, system_instruction=system_instruction, max_tokens=max_tokens):
                     yield token
         else:
@@ -1492,7 +1491,7 @@ Return STRICT JSON ONLY matching this exact schema:
                     yield token
             except Exception as e:
                 if self.openai_api_key:
-                    print(f"[Gemini Stream Notice]: {e}. Falling back to OpenAI ({self.openai_model}).")
+                    logger.info("Gemini stream notice, falling back to OpenAI", model=self.openai_model, error=str(e))
                     async for token in self._stream_openai_api(prompt, system_instruction=system_instruction, max_tokens=max_tokens):
                         yield token
                 else:

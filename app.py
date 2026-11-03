@@ -27,6 +27,26 @@ from rate_limiter import rate_limiter, get_rate_limiter, InMemoryFallbackLimiter
 import db
 import syllabus
 import video_service
+import structlog
+import logging
+from guardrails import check_input_guardrails, SAFE_CANNED_RESPONSE
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.StackInfoRenderer(),
+        structlog.dev.set_exc_info,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger("excel_ai.app")
 
 # Global in-memory registry for background ingestion jobs
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -69,14 +89,23 @@ async def lifespan(app: FastAPI):
     try:
         await rate_limiter.init()
     except Exception as e:
-        print(f"[Lifespan Startup Critical]: Rate limiter initialization failed: {e}")
+        logger.error("Rate limiter initialization failed", error=str(e))
     yield
     try:
         await rate_limiter.close()
     except Exception as e:
-        print(f"[Lifespan Shutdown Notice]: Rate limiter close: {e}")
+        logger.info("Rate limiter close notice", error=str(e))
 
 app = FastAPI(title="Excel AI Coach", version="2.0.0", lifespan=lifespan)
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    req_id = request.headers.get("x-request-id") or request.headers.get("x-correlation-id") or str(uuid.uuid4())
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(request_id=req_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = req_id
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -182,6 +211,16 @@ async def chat_endpoint(
     image_b64 = ""
     mime_type = "image/jpeg"
 
+    # Fast input guardrails check against prompt injection (<10ms)
+    is_safe, matched_pattern = check_input_guardrails(user_text)
+    if not is_safe:
+        logger.warning(
+            "Prompt injection attempt blocked by guardrails",
+            matched_pattern=matched_pattern,
+            user_text=user_text[:120],
+        )
+        return {"reply": SAFE_CANNED_RESPONSE}
+
     # Safely handle optional file without AttributeError
     if file is not None and getattr(file, "filename", None):
         try:
@@ -189,7 +228,7 @@ async def chat_endpoint(
             mime_type = file.content_type or "image/jpeg"
             image_b64 = base64.b64encode(content_bytes).decode("utf-8")
         except Exception as e:
-            print(f"[File reading error]: {e}")
+            logger.error("File reading error", error=str(e))
 
     if not user_text and not image_b64:
         raise HTTPException(status_code=400, detail="Please provide a message or upload an image/document.")
@@ -238,7 +277,7 @@ async def chat_endpoint(
                 )
             return {"reply": summary_reply}
         except Exception as e:
-            print(f"[Video Summary Error]: {e}")
+            logger.error("Video summary error", error=str(e))
             raise HTTPException(status_code=503, detail="The AI is busy summarizing the video. Please try again in a moment.")
 
     # If this session has an active shared video, attach teaching context for doubt solving
@@ -319,7 +358,7 @@ async def chat_endpoint(
                     )
                     candidate_chunks = list(raw_chunks)
                 except Exception as e:
-                    print(f"[Vector DB notice ({ns})]: {e}. Checking local knowledge fallback...")
+                    logger.warning("Vector DB notice, checking local knowledge fallback", namespace=ns, error=str(e))
                     retrieval_ok = False
 
                 if not candidate_chunks:
@@ -335,9 +374,9 @@ async def chat_endpoint(
                                     "subject": lr.get("subject", "")
                                 })
                         if candidate_chunks:
-                            print(f"[Local RAG Fallback]: Found {len(candidate_chunks)} candidate excerpts for query.")
+                            logger.info("Local RAG fallback found candidate excerpts", count=len(candidate_chunks))
                     except Exception as l_err:
-                        print(f"[Local RAG notice]: {l_err}")
+                        logger.warning("Local RAG notice", error=str(l_err))
 
                 if candidate_chunks:
                     try:
@@ -348,7 +387,7 @@ async def chat_endpoint(
                             min_score=MIN_SCORE
                         )
                     except Exception as r_err:
-                        print(f"[Reranker Warning]: {r_err}")
+                        logger.warning("Reranker warning", error=str(r_err))
                         stream_chunks = [c for c in candidate_chunks if c.get("score", 0.0) >= MIN_SCORE][:4]
 
             if stream_chunks:
@@ -369,7 +408,7 @@ async def chat_endpoint(
                     collected_tokens.append(token)
                     yield f"data: {json.dumps({'token': token})}\n\n"
             except Exception as stream_err:
-                print(f"[Streaming AI Error]: {stream_err}")
+                logger.error("Streaming AI error", error=str(stream_err))
                 yield f"data: {json.dumps({'error': 'The AI is busy right now. Please try again in a moment.'})}\n\n"
                 return
 
@@ -396,7 +435,7 @@ async def chat_endpoint(
                     response_time_ms=int(resp_time * 1000)
                 )
             except Exception as log_err:
-                print(f"[Chat Log Warning]: {log_err}")
+                logger.warning("Chat log warning", error=str(log_err))
 
         return StreamingResponse(
             chat_sse_stream(),
@@ -423,7 +462,7 @@ async def chat_endpoint(
             )
             candidate_chunks = list(raw_chunks)
         except Exception as e:
-            print(f"[Vector DB notice ({ns})]: {e}. Checking local knowledge fallback...")
+            logger.warning("Vector DB notice, checking local knowledge fallback", namespace=ns, error=str(e))
             retrieval_ok = False
 
         if not candidate_chunks:
@@ -439,9 +478,9 @@ async def chat_endpoint(
                             "subject": lr.get("subject", "")
                         })
                 if candidate_chunks:
-                    print(f"[Local RAG Fallback]: Found {len(candidate_chunks)} candidate excerpts for query.")
+                    logger.info("Local RAG fallback found candidate excerpts", count=len(candidate_chunks))
             except Exception as l_err:
-                print(f"[Local RAG notice]: {l_err}")
+                logger.warning("Local RAG notice", error=str(l_err))
 
         if candidate_chunks:
             try:
@@ -452,7 +491,7 @@ async def chat_endpoint(
                     min_score=MIN_SCORE
                 )
             except Exception as r_err:
-                print(f"[Reranker Warning]: Cross-Encoder reranking error: {r_err}. Falling back to un-reranked top chunks.")
+                logger.warning("Cross-Encoder reranking error, falling back to un-reranked chunks", error=str(r_err))
                 chunks = [c for c in candidate_chunks if c.get("score", 0.0) >= MIN_SCORE][:4]
 
     try:
@@ -466,7 +505,7 @@ async def chat_endpoint(
             history=parsed_history
         )
     except Exception as e:
-        print(f"[AI Chat Error]: {e}")
+        logger.error("AI chat error", error=str(e))
         raise HTTPException(
             status_code=503,
             detail="The AI is busy right now. Please try again in a moment."
@@ -490,7 +529,7 @@ async def chat_endpoint(
             response_time_ms=resp_time_ms
         )
     except Exception as log_err:
-        print(f"[Chat Log Warning]: {log_err}")
+        logger.warning("Chat log warning", error=str(log_err))
 
     return {"reply": clean_student_reply(res["reply"])}
 
@@ -599,7 +638,7 @@ async def generate_mcq_endpoint(req: MCQGenerateRequest):
             chunks = [c for c in raw_chunks if c.get("score", 0.0) >= MIN_SCORE and c.get("content")]
             chunks = chunks[:5]
         except Exception as query_err:
-            print(f"[MCQ Pinecone Query Warning]: {query_err}")
+            logger.warning("MCQ Pinecone query warning", error=str(query_err))
             chunks = []
 
     try:
@@ -613,7 +652,7 @@ async def generate_mcq_endpoint(req: MCQGenerateRequest):
         )
         return data
     except Exception as e:
-        print(f"[AI MCQ Error]: {e}")
+        logger.error("AI MCQ error", error=str(e))
         raise HTTPException(
             status_code=503,
             detail="The AI is busy right now. Please try again in a moment."
@@ -652,7 +691,7 @@ async def evaluate_endpoint(
             b64_str = base64.b64encode(file_bytes).decode("utf-8")
             images.append({"data": b64_str, "mime_type": mime})
         except Exception as file_err:
-            print(f"[Evaluation File Read Error]: {file_err}")
+            logger.error("Evaluation file read error", error=str(file_err))
 
     # Grounding: retrieve relevant study material from Pinecone
     ns = syllabus.namespace(c_norm, l_norm)
@@ -670,7 +709,7 @@ async def evaluate_endpoint(
             )
             chunks = [c for c in raw_chunks if c.get("score", 0.0) >= MIN_SCORE]
         except Exception as query_err:
-            print(f"[Evaluation Retrieval Notice]: {query_err}")
+            logger.warning("Evaluation retrieval notice", error=str(query_err))
 
     try:
         result = await ai.evaluate_subjective_answer(
@@ -685,7 +724,7 @@ async def evaluate_endpoint(
         )
         return result
     except Exception as e:
-        print(f"[Evaluation Engine Error]: {e}")
+        logger.error("Evaluation engine error", error=str(e))
         raise HTTPException(status_code=500, detail=f"Evaluation could not be completed: {str(e)}")
 
 
@@ -822,7 +861,7 @@ async def process_ingestion_job(
                             processed_docs.append(doc_name)
                             total_chunks_added += len(chunks)
                     except Exception as err:
-                        print(f"Error processing {doc_name} from zip: {err}")
+                        logger.error("Error processing document from zip", doc_name=doc_name, error=str(err))
 
                     pct = int(15 + ((idx + 1) / total_pdfs) * 80)
                     job["progress"] = min(pct, 95)
@@ -889,7 +928,7 @@ async def process_ingestion_job(
         job["status"] = "failed"
         job["error"] = str(e)
         job["message"] = f"Ingestion error: {e}"
-        print(f"[Ingestion Error]: {e}")
+        logger.error("Ingestion error", error=str(e))
     finally:
         job["updated_at"] = datetime.now().isoformat()
 
@@ -1028,5 +1067,5 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    print(f"Starting Excel AI on http://localhost:{port}")
+    logger.info("Starting Excel AI", port=port, url=f"http://localhost:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

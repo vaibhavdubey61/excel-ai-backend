@@ -5,6 +5,9 @@ import pypdf
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import structlog
+
+logger = structlog.get_logger("excel_ai.rag_engine")
 
 STUDY_MATERIALS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "study_materials")
 
@@ -152,7 +155,7 @@ class RAGEngine:
                         "text": clean_text
                     })
         except Exception as e:
-            print(f"Error parsing PDF {pdf_path}: {e}")
+            logger.error("Error parsing PDF", pdf_path=str(pdf_path), error=str(e))
         return pages_data
 
     def chunk_text(self, text: str, chunk_size: int = 400, overlap: int = 50) -> List[str]:
@@ -215,7 +218,7 @@ class RAGEngine:
             corpus = [f"{c['subject']} {c.get('section', '')} {c['content']}" for c in self.chunks]
             self.vectorizer = TfidfVectorizer(stop_words='english', max_features=10000, ngram_range=(1, 2))
             self.tfidf_matrix = self.vectorizer.fit_transform(corpus)
-            print(f"[RAG] Indexed {len(self.chunks)} knowledge chunks across {len(subjects)} subjects.")
+            logger.info("Indexed knowledge chunks", chunks_count=len(self.chunks), subjects_count=len(subjects))
 
     def search(self, query: str, subject: Optional[str] = None, top_k: int = 4) -> List[Dict[str, Any]]:
         """Searches indexed study material using query and returns relevant excerpts."""
@@ -250,7 +253,7 @@ class RAGEngine:
                 })
             return results
         except Exception as e:
-            print(f"[RAG Search Error] {e}")
+            logger.error("RAG search error", error=str(e))
             return []
 
     def get_stats(self) -> Dict[str, Any]:

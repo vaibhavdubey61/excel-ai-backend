@@ -13,3 +13,4 @@ redis>=5.0.0
 fastapi-limiter==0.1.6
 tenacity>=8.2.0
 pybreaker>=1.2.0
+structlog>=24.1.0

@@ -23,10 +23,11 @@ import os
 import asyncio
 import threading
 import logging
+import structlog
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 
-logger = logging.getLogger("excel_ai.reranker")
+logger = structlog.get_logger("excel_ai.reranker")
 
 # Default lightweight cross-encoder model (80MB, fast CPU inference)
 DEFAULT_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -84,17 +85,14 @@ class CrossEncoderReranker:
             with self._lock:
                 if self._model is None and not self._load_failed:
                     try:
-                        print(f"[Reranker]: Initializing Cross-Encoder model '{self.model_name}'...")
                         logger.info(f"Initializing Cross-Encoder model '{self.model_name}'...")
                         self._model = CrossEncoder(
                             model_name_or_path=self.model_name,
                             max_length=self.max_length
                         )
-                        print(f"[Reranker]: Cross-Encoder model '{self.model_name}' loaded successfully.")
                         logger.info(f"Cross-Encoder model '{self.model_name}' loaded successfully.")
                     except Exception as e:
                         self._load_failed = True
-                        print(f"[Reranker Warning]: Failed to load Cross-Encoder model '{self.model_name}': {e}. Using fallback retrieval ordering.")
                         logger.warning(f"Failed to load Cross-Encoder model '{self.model_name}': {e}")
                         return None
         return self._model
@@ -119,7 +117,7 @@ class CrossEncoderReranker:
             normalized = [_sigmoid(float(s)) for s in scores_list]
             return normalized
         except Exception as e:
-            print(f"[Reranker Warning]: Cross-Encoder prediction error: {e}. Falling back to default scores.")
+            logger.warning("Cross-Encoder prediction error, falling back to default scores", error=str(e))
             logger.warning(f"Cross-Encoder prediction error: {e}")
             return [0.0] * len(pairs)
 
@@ -191,10 +189,6 @@ class CrossEncoderReranker:
             # "Add a log statement showing the original score vs. reranked score for debugging."
             doc_name = chunk_copy.get("doc_name") or chunk_copy.get("subject") or "Study_Material"
             sec_name = chunk_copy.get("section") or f"Page {chunk_copy.get('page', '?')}"
-            print(
-                f"[Reranker] Chunk '{doc_name}' ({sec_name}): "
-                f"Original Score = {orig_score:.4f}, Reranked Score = {r_score_rounded:.4f}"
-            )
             logger.info(
                 f"[Reranker] Chunk '{doc_name}' ({sec_name}): "
                 f"Original Score = {orig_score:.4f}, Reranked Score = {r_score_rounded:.4f}"
