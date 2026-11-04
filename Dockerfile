@@ -1,11 +1,13 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# NOTE: build-essential / gcc removed — not needed after sentence-transformers was dropped.
+# scikit-learn wheels ship pre-compiled for linux/amd64; no C compilation required.
+# If you re-add heavy ML libraries that need native extensions, uncomment the block below:
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     build-essential \
+#     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
 COPY requirements.txt .

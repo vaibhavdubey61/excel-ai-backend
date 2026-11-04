@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 import pypdf
+import psutil
 
 from rag_engine import RAGEngine, STUDY_MATERIALS_DIR
 from ai_service import AIService, clean_student_reply
@@ -344,7 +345,10 @@ async def chat_endpoint(
             # Event 1: Immediate notification to the student
             yield f"data: {json.dumps({'event': 'status', 'message': 'Searching knowledge base...'})}\n\n"
 
-            # 2. Two-Stage RAG Pipeline: Retrieval (Top 20) + Cross-Encoder Reranking
+            # RAG Pipeline: Retrieve top-5 from Pinecone (cosine similarity) with TF-IDF fallback.
+            # NOTE: Local cross-encoder reranker was removed to prevent OOM on 512MB containers.
+            # The lightweight pass-through reranker in reranker.py applies MIN_SCORE + top-k sorting.
+            # To restore high-precision reranking, integrate Jina/Cohere Rerank API in reranker.py.
             ns = syllabus.namespace(c_norm, l_norm)
             candidate_chunks: List[Dict[str, Any]] = []
             stream_chunks: List[Dict[str, Any]] = []
@@ -353,7 +357,7 @@ async def chat_endpoint(
             if search_query:
                 try:
                     raw_chunks = await asyncio.wait_for(
-                        cloud_store.query(search_query, namespace=ns, top_k=20),
+                        cloud_store.query(search_query, namespace=ns, top_k=5),
                         timeout=6.0
                     )
                     candidate_chunks = list(raw_chunks)
@@ -363,7 +367,7 @@ async def chat_endpoint(
 
                 if not candidate_chunks:
                     try:
-                        local_results = local_rag.search(search_query, top_k=20)
+                        local_results = local_rag.search(search_query, top_k=5)
                         for lr in local_results:
                             if lr.get("relevance_score", 0.0) >= 0.12:
                                 candidate_chunks.append({
@@ -379,6 +383,7 @@ async def chat_endpoint(
                         logger.warning("Local RAG notice", error=str(l_err))
 
                 if candidate_chunks:
+                    # Pass-through reranker: sorts by score, applies MIN_SCORE filter, returns top-k.
                     try:
                         stream_chunks = await reranker.rerank(
                             query=search_query,
@@ -457,7 +462,7 @@ async def chat_endpoint(
     if search_query:
         try:
             raw_chunks = await asyncio.wait_for(
-                cloud_store.query(search_query, namespace=ns, top_k=20),
+                cloud_store.query(search_query, namespace=ns, top_k=5),
                 timeout=6.0
             )
             candidate_chunks = list(raw_chunks)
@@ -467,7 +472,7 @@ async def chat_endpoint(
 
         if not candidate_chunks:
             try:
-                local_results = local_rag.search(search_query, top_k=20)
+                local_results = local_rag.search(search_query, top_k=5)
                 for lr in local_results:
                     if lr.get("relevance_score", 0.0) >= 0.12:
                         candidate_chunks.append({
@@ -483,6 +488,7 @@ async def chat_endpoint(
                 logger.warning("Local RAG notice", error=str(l_err))
 
         if candidate_chunks:
+            # Pass-through reranker: sorts by score, applies MIN_SCORE filter, returns top-k.
             try:
                 chunks = await reranker.rerank(
                     query=search_query,
@@ -491,7 +497,7 @@ async def chat_endpoint(
                     min_score=MIN_SCORE
                 )
             except Exception as r_err:
-                logger.warning("Cross-Encoder reranking error, falling back to un-reranked chunks", error=str(r_err))
+                logger.warning("Score-sort reranking warning", error=str(r_err))
                 chunks = [c for c in candidate_chunks if c.get("score", 0.0) >= MIN_SCORE][:4]
 
     try:
@@ -1056,11 +1062,18 @@ async def export_chat_logs(request: Request):
 
 @app.get("/api/health")
 async def health_check():
+    """Returns service health status and current process memory usage via psutil."""
+    proc = psutil.Process(os.getpid())
+    mem = proc.memory_info()
     return {
         "status": "ok",
         "cloud_vector_db": "Pinecone Serverless (AWS)",
         "ai_model": "Google Gemini 1.5 Flash (Live)",
-        "reranker": reranker.model_name if reranker.is_available() else "fallback"
+        "reranker": reranker.model_name,
+        "memory": {
+            "rss_mb": round(mem.rss / 1024 / 1024, 2),
+            "vms_mb": round(mem.vms / 1024 / 1024, 2),
+        },
     }
 
 
